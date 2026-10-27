@@ -157,3 +157,52 @@ Restaient à trancher : le driver Postgres et les migrations, les garanties de l
 - **Périmètre de la semaine 1** : un seul type de job, qui répond dans Telegram pour prouver la chaîne webhook → file → worker → réponse. Les vrais flux arrivent en semaine 2.
 - **Ce qu'il faut à Abdou** : WSL et Docker sur son poste, un compte Oracle Cloud, un bot créé avec BotFather. Il faut aussi, dans `.env`, les variables `TELEGRAM_BOT_TOKEN`, `TELEGRAM_WEBHOOK_SECRET` et les identifiants de la liste blanche.
 - **À ajouter aux questions de découverte (§9)** : obtenir un sous-domaine de dzdia.com et l'identifiant du groupe Telegram de l'équipe.
+
+---
+
+## ADR-005 — Entrée Telegram : message normalisé, liste blanche, enregistrement du webhook et logs JSON
+
+**Date :** 2026-10-27 · **Statut :** accepté
+
+### Contexte
+L'ADR-004 fixe la chaîne webhook → file → worker → réponse, mais pas quatre points nécessaires pour écrire `api/` et `channels/` :
+- ce que l'API met dans le `payload` du job ;
+- où vit la liste blanche, et quelle règle elle applique dans le groupe d'équipe ;
+- qui appelle `setWebhook` ;
+- le format des logs.
+
+### Décision
+1. **Le job porte un message normalisé, avec l'`Update` brut en annexe.**
+   - L'API convertit l'`Update` en `InboundMessage` (dans `channels/base.py`) : `channel`, `chat_id`, `user_id`, `message_id`, `text`, `sent_at`, plus un champ `raw` qui garde l'`Update` complet.
+   - Les identifiants sont des chaînes, pour ne pas supposer un format propre à Telegram.
+   - Le worker ne lit que les champs normalisés. `raw` sert au débogage et au rejeu.
+   - En semaine 1, seuls les messages texte (`message.text`) sont acceptés. Les autres updates (messages modifiés, photos sans légende, messages de canal sans auteur…) reçoivent un 200 et sont journalisés comme ignorés.
+2. **Liste blanche dans les variables d'environnement, et l'auteur doit y figurer partout.**
+   - Variables : `TELEGRAM_ALLOWED_USER_IDS` (liste d'identifiants) et `TELEGRAM_TEAM_CHAT_ID`.
+   - Un message est accepté si son auteur (`from.id`) est dans la liste **et** s'il arrive soit en privé, soit dans le groupe d'équipe. Un journaliste listé qui écrit depuis un autre groupe est refusé.
+   - La règle échoue fermé : une liste vide refuse tout le monde.
+   - Les refus reçoivent un 200 (ADR-004) et sont journalisés avec l'identifiant de l'utilisateur et du chat, **sans le texte du message**.
+3. **`setWebhook` passe par une commande CLI lancée au déploiement**, sur le modèle de `db.migrate` : `python -m dzdia_newsroom.channels.telegram set-webhook`.
+   - Elle transmet l'URL publique, le `secret_token` et `allowed_updates=["message"]`. L'option `--drop-pending` vide les updates en attente.
+   - L'appel est idempotent : on peut le relancer à chaque déploiement.
+   - L'API ne connaît donc que le secret du webhook, jamais le token du bot. Seuls le worker et la CLI en ont besoin (moindre privilège).
+4. **Logs JSON, une ligne par événement, avec la stdlib seule.**
+   - Un module `logging_setup.py` fournit un `JsonFormatter`. `api` et `worker` l'installent au démarrage, et les loggers d'uvicorn passent par lui.
+   - Champs fixes : `ts`, `level`, `logger`, `msg`. S'y ajoutent les champs passés en `extra` (`job_id`, `update_id`, `latency_ms`…), qui deviennent filtrables dans `docker logs`.
+   - Jamais de secret ni de texte de message dans les logs.
+   - `LOG_FORMAT=text` garde une sortie lisible en développement.
+
+### Alternatives écartées
+- **Payload brut seul** : le worker dépendrait du format Telegram, ce qui casse l'abstraction `Channel`.
+- **Payload normalisé seul** : on perdrait les champs non prévus, utiles pour déboguer ou rejouer.
+- **Liste blanche en table Postgres** : il faudrait une migration et un moyen d'administrer la table, pour environ 5 journalistes et une liste qui change rarement.
+- **Accepter tout membre du groupe d'équipe** : une personne ajoutée au groupe par erreur aurait accès aux outils.
+- **`setWebhook` au démarrage de l'API** : l'appel serait refait à chaque redémarrage, et l'API devrait connaître le token du bot et son URL publique.
+- **structlog** : une dépendance de plus, alors qu'un formatter d'une trentaine de lignes suffit.
+
+### Conséquences
+- Nouvelles dépendances : `fastapi` et `uvicorn`.
+- Ajouter un journaliste revient à modifier `.env` puis à redémarrer `api`.
+- Les réglages Telegram sont séparés : l'API reçoit le secret et la liste blanche ; le worker et la CLI reçoivent le token du bot.
+- Les messages non textuels (photos, documents, notes vocales) sont ignorés jusqu'à ce qu'un flux en ait besoin (semaine 2 ou plus tard).
+- À l'avenir, un second canal (WhatsApp, interface web) n'aura qu'à produire un `InboundMessage`.

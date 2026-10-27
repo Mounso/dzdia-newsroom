@@ -214,3 +214,31 @@ async def test_run_forever_drains_and_wakes_on_event() -> None:
         task.cancel()
         with pytest.raises(asyncio.CancelledError):
             await task
+
+
+async def test_stop_while_idle_returns_without_waiting_for_the_poll() -> None:
+    stop = asyncio.Event()
+    task = asyncio.create_task(
+        Worker(FakeStore(), {}, WorkerConfig(poll_s=30)).run_forever(asyncio.Event(), stop)
+    )
+    await asyncio.sleep(0.01)  # let it go idle
+    stop.set()
+    await asyncio.wait_for(task, timeout=1)
+
+
+async def test_stop_lets_the_current_job_finish_and_claims_no_more() -> None:
+    started, release = asyncio.Event(), asyncio.Event()
+
+    async def slow(job: ClaimedJob) -> None:
+        started.set()
+        await release.wait()
+
+    store = FakeStore(jobs=[make_job(), make_job()])
+    stop = asyncio.Event()
+    task = asyncio.create_task(worker(store, {"echo": slow}).run_forever(asyncio.Event(), stop))
+    await started.wait()
+    stop.set()
+    release.set()
+    await asyncio.wait_for(task, timeout=1)
+    assert store.completed == [1]  # the running job finished
+    assert len(store.jobs) == 1  # the second one was left in the queue

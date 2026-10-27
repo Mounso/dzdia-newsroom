@@ -6,7 +6,6 @@ the side effect but before `complete`), so handlers must be idempotent or record
 """
 
 import asyncio
-import contextlib
 import logging
 import random
 import time
@@ -79,18 +78,30 @@ class Worker:
         self._config = config
         self._rand = rand
 
-    async def run_forever(self, wake: asyncio.Event) -> None:
+    async def run_forever(self, wake: asyncio.Event, stop: asyncio.Event | None = None) -> None:
         """Drain the queue, then sleep until `wake` is set (by NOTIFY) or `poll_s` elapses.
-        Stop it by cancelling the task."""
-        while True:
+
+        Graceful stop: once `stop` is set, no new job is claimed and this returns after the
+        current job ends. Cancelling the task stops at once (the job's lease then expires)."""
+        stop = stop or asyncio.Event()
+        while not stop.is_set():
             wake.clear()  # before draining: a NOTIFY arriving meanwhile is not lost
             try:
-                while await self.run_once():
+                while not stop.is_set() and await self.run_once():
                     pass
             except Exception:
                 logger.exception("worker iteration failed; retrying after the poll interval")
-            with contextlib.suppress(TimeoutError):
-                await asyncio.wait_for(wake.wait(), timeout=self._config.poll_s)
+            await self._sleep_until_set(wake, stop)
+
+    async def _sleep_until_set(self, *events: asyncio.Event) -> None:
+        waiters = {asyncio.create_task(event.wait()) for event in events}
+        try:
+            await asyncio.wait(
+                waiters, timeout=self._config.poll_s, return_when=asyncio.FIRST_COMPLETED
+            )
+        finally:
+            for waiter in waiters:
+                waiter.cancel()
 
     async def run_once(self) -> bool:
         """Claim and process one job. Returns False when no job is ready."""
