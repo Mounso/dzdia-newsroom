@@ -1,0 +1,14 @@
+# Sampling frame of the v1 hallucination baseline (ADR-001).
+per_feed = 8          # most recent entries taken from each feed
+n_opaque = 4          # opaque-URL duplicates (same article, URL without an informative slug)
+opaque_feed = "tsa"   # WordPress feed whose <guid> is an opaque ?p=ID permalink
+seed = 20261027
+
+[[feeds]]
+name = "tsa"
+url = "https://www.tsa-algerie.com/feed/"
+
+# Replaces El Watan (elwatan.dz resets connections), see ADR-002.
+[[feeds]]
+name = "algerie360"
+url = "https://www.algerie360.com/feed/"
