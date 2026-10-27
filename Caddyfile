@@ -1,0 +1,16 @@
+# Production entry point (ADR-006). Caddy gets and renews the Let's Encrypt certificate for
+# PUBLIC_HOST (e.g. bot.dzdia.com, or a DuckDNS name until then). Only the webhook and the
+# health probe reach the API; everything else gets a 404.
+{$PUBLIC_HOST} {
+	@api path /webhooks/telegram /health
+	handle @api {
+		# Telegram updates are a few KB; refuse anything much larger before it reaches the API.
+		request_body {
+			max_size 1MB
+		}
+		reverse_proxy api:8000
+	}
+	handle {
+		respond 404
+	}
+}

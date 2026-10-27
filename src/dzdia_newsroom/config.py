@@ -11,7 +11,11 @@ from typing import Annotated, Literal
 from pydantic import SecretStr, field_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
-_ENV = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
+# `env_ignore_empty`: compose passes optional variables as empty strings (`${VAR:-}`); treat
+# them as unset so defaults apply instead of failing to parse "" as an int.
+_ENV = SettingsConfigDict(
+    env_file=".env", env_file_encoding="utf-8", extra="ignore", env_ignore_empty=True
+)
 # Telegram accepts 1-256 chars of [A-Za-z0-9_-]; 32 is our floor so the secret cannot be guessed.
 _WEBHOOK_SECRET = re.compile(r"[A-Za-z0-9_-]{32,256}")
 

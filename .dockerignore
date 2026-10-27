@@ -1,0 +1,8 @@
+# Allowlist: only what the image build needs enters the build context. Secrets (.env), local
+# eval data (copyrighted articles) and local-only notes can never end up in an image layer.
+*
+!pyproject.toml
+!uv.lock
+!README.md
+!src/
+**/__pycache__

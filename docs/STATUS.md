@@ -1,14 +1,15 @@
-# Statut — 2026-10-27 (webhook et worker codés)
+# Statut — 2026-10-27 (chaîne validée avec le vrai bot de dev)
 
 ## Pour reprendre dans une nouvelle session
 - **Dépôt GitHub :** `origin` = https://github.com/Mounso/dzdia-newsroom. Tout est sur `main` (la branche `feat/postgres-job-queue` y a été fusionnée en avance rapide). Le 2026-10-27, l'historique a été réécrit et poussé en force pour retirer les mentions de co-auteur : **aucun commit ne porte de ligne `Co-Authored-By`**, et il ne faut pas en ajouter.
-- **CI :** pas encore vérifiée (`gh` n'est pas installé sur le poste et le dépôt n'est pas lisible par l'API publique). Vérifier l'onglet Actions de GitHub.
+- **CI :** verte sur le commit `3a2a5f3`, test de bout en bout compris (vérifiée par Abdou dans l'onglet Actions). Claude ne peut pas la lire : `gh` n'est pas installé et le dépôt n'est pas lisible par l'API publique.
 - **Fichiers locaux, jamais commités** (exclus via `.git/info/exclude`) :
   - `Refactorisation DzdiaBot v2.1.md` : le cahier des charges complet (périmètre, architecture cible, feuille de route, questions de découverte) ;
   - `docs/fiche_de_suivi.md` : la fiche de préparation aux entretiens d'Abdou. **La mettre à jour à la fin de chaque étape**, en même temps que ce fichier.
 - **Environnement :** Windows 11, avec WSL (Ubuntu) et Docker Desktop installés le 2026-10-27. Les tests Postgres tournent dans un conteneur Linux (commande dans `CLAUDE.md`), car psycopg en async ne fonctionne pas avec la boucle asyncio par défaut de Windows.
-- **Vérifications :** ruff, `ruff format` et mypy strict ne signalent rien. Sous Windows, 113 tests passent et 11 sont sautés (les tests Postgres). Dans Docker, les 124 passent.
-- **`.env.example` est illisible pour Claude** (règle de `.claude/settings.json`). Abdou doit y ajouter lui-même les nouvelles variables (voir l'étape 8 ci-dessous).
+- **Vérifications :** ruff, `ruff format` et mypy strict ne signalent rien. Sous Windows, 114 tests passent et 11 sont sautés (les tests Postgres). Dans Docker, les 125 passent.
+- **`.env.example` est illisible pour Claude** (règle de `.claude/settings.json`). Abdou doit y ajouter lui-même les nouvelles variables (voir les étapes 8 et 9 ci-dessous).
+- **`.env` d'Abdou :** il contient un token de bot de dev (actif) et un token de bot de prod (en commentaire).
 
 ## Fait et testé
 1. **Socle du dépôt** : uv, ruff, mypy strict, pytest, CI GitHub Actions, `CLAUDE.md`, `.claude/settings.json` (lecture de `.env` bloquée), `config.py` (pydantic-settings).
@@ -34,6 +35,12 @@
    - `logging_setup.py` (logs JSON, `LOG_FORMAT=text` en local), `db/pool.py`, `runtime.py` (`SelectorEventLoop` sous Windows) ;
    - réglages : `TELEGRAM_WEBHOOK_SECRET` (32 à 256 caractères parmi `A-Za-z0-9_-`), `TELEGRAM_ALLOWED_USER_IDS` (séparés par des virgules), `TELEGRAM_TEAM_CHAT_ID`, `TELEGRAM_BOT_TOKEN`, `LOG_FORMAT`, `LOG_LEVEL` ;
    - 54 nouveaux tests, dont un test de bout en bout contre Postgres. Un test de fumée dans Docker (migration, API, worker, SIGTERM) a réussi.
+9. **Pile Docker** (ADR-006) : `Dockerfile` (deux étages, utilisateur non-root, image de 406 Mo dont 162 Mo de `.venv`), `.dockerignore` en liste blanche, `docker-compose.yml`, `Caddyfile` :
+   - services `postgres`, `migrate` (lancé une fois), `api`, `worker` ; profils `dev` (`cloudflared`), `prod` (`caddy`) et `tools` (`telegram-cli`, seul service à recevoir le token et le secret, pour `set-webhook`) ;
+   - nouvelles variables de `.env` : `POSTGRES_PASSWORD` (obligatoire), `PUBLIC_HOST` (prod), et en option `API_PORT`, `POSTGRES_PORT` ;
+   - `config.py` : `env_ignore_empty=True`, car compose passe `""` pour une variable optionnelle absente ;
+   - **validé avec le vrai bot de dev** (profil `dev`, tunnel cloudflared, `set-webhook`) : Abdou a reçu « Bien reçu. ». Le job est passé de `queued` à `done` en 149 ms, dont 139 ms pour `sendMessage`. Les deux premiers messages avaient été refusés, car `TELEGRAM_ALLOWED_USER_IDS` valait encore l'exemple `123` : la liste blanche a fait son travail ;
+   - test de fumée avec des variables factices (projet `dzdia-smoke`, supprimé ensuite) : migration, healthchecks, webhook 200/401, job traité, l'API n'a pas le token, utilisateur `app` (uid 10001), arrêt du worker en 1 s avec le code 0 ; via Caddy : `/health` passe, `/docs` et `/` donnent 404, un corps de 2 Mo est refusé (413) ; `telegram-cli` atteint bien Telegram.
 
 ## En pause : étape `extract`
 - **État :** 20/144 extractions faites avec `gemini-2.5-flash`. Les 124 autres ont pris des 429 : le free tier est limité à 5 requêtes par minute et 20 par jour. `match` n'est pas lancé.
@@ -52,17 +59,11 @@
    - un sous-domaine de dzdia.com pour le webhook (par exemple `bot.dzdia.com`) ;
    - l'identifiant du groupe Telegram de l'équipe ;
    - les identifiants Telegram des journalistes, pour la liste blanche.
-2. **Dockerfile et `docker-compose.yml`** (fin de la semaine 1, ADR-004) :
-   - une seule image pour `api` et `worker`, en arm64 et amd64 ;
-   - les services `migrate` (lancé une fois), `api`, `worker`, `postgres`, et `caddy` en production ;
-   - `stop_grace_period: 30s` sur le worker, aligné sur `SHUTDOWN_GRACE_S = 25` ;
-   - le profil `dev` déjà cité dans `CLAUDE.md`.
-
-   Poser les questions d'architecture avant de commencer. Puis tester en local avec un vrai bot : BotFather, et un tunnel HTTPS (par exemple `cloudflared`) pour `set-webhook`.
-3. **Déploiement sur la VM Oracle Ampere (ARM64)**, avec Caddy et DuckDNS en attendant le sous-domaine. Pré-requis côté Abdou : compte Oracle Cloud, bot BotFather, `TELEGRAM_BOT_TOKEN`, `TELEGRAM_WEBHOOK_SECRET`.
-4. **Reprendre `extract` puis `match`**, et inspecter la répartition trouvé / non trouvé par type. Ajuster `--name-threshold` si nécessaire.
-5. **Étiquetage :** `export-labels`, étiquetage S/C/N par Abdou dans Excel, puis `import-labels` et `report`. Commiter `labels.jsonl` et `report.md`.
-6. **Passe parallèle du LLM-juge** sur les mêmes éléments. Les verdicts sont stockés à part, pour la calibration en semaine 5.
+2. **Déploiement sur la VM Oracle Ampere (ARM64)**, avec Caddy et DuckDNS en attendant le sous-domaine. Pré-requis côté Abdou : compte Oracle Cloud, bot BotFather, `TELEGRAM_BOT_TOKEN`, `TELEGRAM_WEBHOOK_SECRET`.
+3. **Reprendre `extract` puis `match`**, et inspecter la répartition trouvé / non trouvé par type. Ajuster `--name-threshold` si nécessaire.
+4. **Étiquetage :** `export-labels`, étiquetage S/C/N par Abdou dans Excel, puis `import-labels` et `report`. Commiter `labels.jsonl` et `report.md`.
+5. **Passe parallèle du LLM-juge** sur les mêmes éléments. Les verdicts sont stockés à part, pour la calibration en semaine 5.
 
 ## Petits points en suspens
+- La pile de dev d'Abdou tourne encore (`docker compose --profile dev`), avec le webhook du bot de dev pointé sur une URL trycloudflare temporaire. Quand on l'arrête, le webhook devient injoignable : Telegram garde les updates en attente jusqu'au prochain `set-webhook`.
 - Ajouter un `.gitattributes` (`* text=auto eol=lf`) : Git signale des conversions CRLF → LF.

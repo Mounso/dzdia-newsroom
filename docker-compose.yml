@@ -1,0 +1,130 @@
+# Services: ADR-004. Image, profiles, migrations and secrets: ADR-006.
+#   dev:  docker compose --profile dev up -d --build    (+ cloudflared tunnel to the API)
+#   prod: docker compose --profile prod up -d --build   (+ caddy on ports 80 and 443)
+# `.env` is only used for interpolation: each service lists the variables it receives, so the
+# API never gets the bot token (ADR-005).
+
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "5"
+
+x-app: &app
+  build: .
+  image: dzdia-newsroom:local
+  restart: unless-stopped
+  logging: *logging
+
+x-database-url: &database-url "postgresql://dzdia:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@postgres:5432/dzdia"
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: dzdia
+      POSTGRES_DB: dzdia
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"  # loopback only, also in prod (ADR-006)
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U dzdia -d dzdia"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    logging: *logging
+
+  migrate:
+    <<: *app
+    restart: "no"
+    command: ["python", "-m", "dzdia_newsroom.db.migrate"]
+    environment:
+      DATABASE_URL: *database-url
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  api:
+    <<: *app
+    environment:
+      DATABASE_URL: *database-url
+      TELEGRAM_WEBHOOK_SECRET: ${TELEGRAM_WEBHOOK_SECRET:?set TELEGRAM_WEBHOOK_SECRET in .env}
+      TELEGRAM_ALLOWED_USER_IDS: ${TELEGRAM_ALLOWED_USER_IDS:-}
+      TELEGRAM_TEAM_CHAT_ID: ${TELEGRAM_TEAM_CHAT_ID:-}
+      LOG_FORMAT: ${LOG_FORMAT:-json}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    ports:
+      - "127.0.0.1:${API_PORT:-8000}:8000"
+    healthcheck:
+      # No curl in the slim image: Python does the probe.
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3)"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
+  worker:
+    <<: *app
+    command: ["python", "-m", "dzdia_newsroom.worker"]
+    environment:
+      DATABASE_URL: *database-url
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:?set TELEGRAM_BOT_TOKEN in .env}
+      LOG_FORMAT: ${LOG_FORMAT:-json}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    stop_grace_period: 30s  # the worker itself gives the current job 25 s (ADR-005)
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
+  # One-off Bot API commands; the only service that gets both the token and the webhook secret:
+  #   docker compose run --rm telegram-cli set-webhook --url https://<host>/webhooks/telegram
+  telegram-cli:
+    <<: *app
+    profiles: ["tools"]
+    restart: "no"
+    entrypoint: ["python", "-m", "dzdia_newsroom.channels.telegram"]
+    command: ["--help"]
+    environment:
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:?set TELEGRAM_BOT_TOKEN in .env}
+      TELEGRAM_WEBHOOK_SECRET: ${TELEGRAM_WEBHOOK_SECRET:?set TELEGRAM_WEBHOOK_SECRET in .env}
+
+  # Dev only: a public HTTPS URL for the webhook, without an account. The URL changes on every
+  # start: read it with `docker compose logs cloudflared`, then run `set-webhook` again.
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    profiles: ["dev"]
+    restart: unless-stopped
+    command: ["tunnel", "--no-autoupdate", "--url", "http://api:8000"]
+    depends_on:
+      api:
+        condition: service_healthy
+    logging: *logging
+
+  # Prod only: the single public entry point, with automatic Let's Encrypt certificates.
+  caddy:
+    image: caddy:2
+    profiles: ["prod"]
+    restart: unless-stopped
+    environment:
+      PUBLIC_HOST: ${PUBLIC_HOST:-}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      api:
+        condition: service_healthy
+    logging: *logging
+
+volumes:
+  pgdata:
+  caddy_data:
+  caddy_config:

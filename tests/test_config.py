@@ -31,6 +31,18 @@ def test_allowlist_defaults_to_empty(monkeypatch: pytest.MonkeyPatch) -> None:
     assert settings.telegram_team_chat_id is None
 
 
+def test_empty_optional_variables_fall_back_to_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
+    # What compose passes for `${VAR:-}` when the variable is not set in .env.
+    settings = load(
+        monkeypatch,
+        TELEGRAM_WEBHOOK_SECRET=SECRET,
+        TELEGRAM_ALLOWED_USER_IDS="",
+        TELEGRAM_TEAM_CHAT_ID="",
+    )
+    assert settings.telegram_allowed_user_ids == frozenset()
+    assert settings.telegram_team_chat_id is None
+
+
 @pytest.mark.parametrize("secret", ["too-short", "a" * 31, "a" * 31 + "!", "a" * 257])
 def test_weak_or_invalid_webhook_secret_is_rejected(
     monkeypatch: pytest.MonkeyPatch, secret: str

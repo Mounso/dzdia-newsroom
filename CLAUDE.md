@@ -9,7 +9,8 @@
 - Migrations: `uv run python -m dzdia_newsroom.db.migrate` (needs `DATABASE_URL`)
 - Types & lint: `uv run mypy && uv run ruff check .`
 - Baseline v1 eval: `uv run python -m evals.baseline_v1 --help`
-- Local stack (needs Docker; `docker-compose.yml` not created yet): `docker compose --profile dev up -d`
+- Local stack (Docker, reads `.env`): `docker compose --profile dev up -d --build` (prod: `--profile prod`)
+- Register the webhook: `docker compose run --rm telegram-cli set-webhook --url https://<host>/webhooks/telegram` (dev host: `docker compose logs cloudflared`)
 
 # Architecture invariants
 - The LLM never produces URLs, ids or trust scores: it cites ids it was given; code resolves and validates them.

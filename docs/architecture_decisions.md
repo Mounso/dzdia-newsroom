@@ -206,3 +206,65 @@ L'ADR-004 fixe la chaîne webhook → file → worker → réponse, mais pas qua
 - Les réglages Telegram sont séparés : l'API reçoit le secret et la liste blanche ; le worker et la CLI reçoivent le token du bot.
 - Les messages non textuels (photos, documents, notes vocales) sont ignorés jusqu'à ce qu'un flux en ait besoin (semaine 2 ou plus tard).
 - À l'avenir, un second canal (WhatsApp, interface web) n'aura qu'à produire un `InboundMessage`.
+
+---
+
+## ADR-006 — Image Docker, organisation de compose, migrations et distribution des secrets
+
+**Date :** 2026-10-27 · **Statut :** accepté
+
+### Contexte
+L'ADR-004 fixe les services : `api` et `worker` (une seule image), `postgres` (`pgvector/pgvector:pg16`) et `caddy` en production, le tout sur une VM Oracle Ampere (arm64). Le cahier des charges prévoit un profil `dev`, avec WordPress et MariaDB à partir de la semaine 2. L'ADR-005 impose que l'API ne voie jamais le token du bot.
+
+Restaient à trancher :
+- comment construire l'image ;
+- comment séparer le développement et la production ;
+- quand appliquer les migrations ;
+- comment chaque conteneur reçoit ses secrets.
+
+### Décision
+1. **Dockerfile en deux étages, construit sur la machine qui le fait tourner.**
+   - **Étage de build** (`ghcr.io/astral-sh/uv:python3.12-bookworm-slim`) : `uv sync --frozen --no-dev --no-editable`. Les dépendances sont installées avant de copier le code, pour que la couche reste en cache tant que `uv.lock` ne change pas.
+   - **Étage final** (`python:3.12-slim-bookworm`) : seulement le `.venv`, et un **utilisateur non-root**. Ni uv ni outils de build.
+   - **Commande par défaut :** l'API. Le worker et `migrate` redéfinissent `command`.
+   - **Lieu du build :** `docker compose build` sur la VM (arm64 natif) comme sur le poste (amd64). Les images de base existent dans les deux architectures. Pas de registre.
+   - **Pas de secret dans l'image :** un `.dockerignore` exclut `.env`, `.venv`, `evals/.data/` et les fichiers locaux.
+2. **Un seul `docker-compose.yml`, avec des profils.**
+   - **Sans profil** (toujours lancés) : `postgres`, `migrate`, `api`, `worker`.
+   - **Profil `dev`** : `cloudflared`, un tunnel rapide sans compte qui donne une URL HTTPS publique vers `api`. WordPress et MariaDB s'y ajouteront en semaine 2.
+   - **Profil `prod`** : `caddy`, seul service à écouter sur les ports 80 et 443. Il ne transmet que `/webhooks/telegram` et `/health` à `api`, et répond 404 à tout le reste.
+   - **Ports :** `api` et `postgres` ne sont publiés que sur `127.0.0.1`.
+3. **Migrations par un service `migrate` lancé une seule fois.**
+   - Il démarre quand `postgres` est sain (`pg_isready`).
+   - `api` et `worker` en dépendent avec `condition: service_completed_successfully` : si une migration échoue, rien ne démarre.
+   - `set-webhook` reste une commande manuelle, car elle dépend de l'URL publique : `docker compose run --rm telegram-cli set-webhook --url …`. Le service `telegram-cli` (profil `tools`) est le seul à recevoir à la fois le token du bot et le secret du webhook.
+4. **Un seul `.env` pour l'humain, une liste de variables explicite par service.**
+   - Compose ne lit `.env` que pour l'interpolation. Chaque service déclare ses variables dans `environment:`. Il n'y a aucun `env_file:` commun.
+   - Répartition :
+     - `api` reçoit le secret du webhook et la liste blanche ;
+     - `worker` reçoit le token du bot ;
+     - `migrate` reçoit seulement la base.
+   - `DATABASE_URL` est construite dans compose à partir de `POSTGRES_PASSWORD`.
+   - Les variables obligatoires utilisent `${VAR:?message}` : compose refuse de démarrer s'il en manque une.
+5. **Choix d'exploitation par défaut.**
+   - Les données de Postgres sont dans un volume nommé.
+   - Healthchecks : `pg_isready` pour `postgres`, `/health` pour `api`.
+   - `restart: unless-stopped`.
+   - `stop_grace_period: 30s` sur `worker` (ADR-005 : 25 s de grâce côté code).
+   - Les logs `json-file` sont limités en taille (rotation), pour ne pas remplir le disque de la VM.
+   - Les sauvegardes (`pg_dump`) sont reportées à l'étape du déploiement.
+
+### Alternatives écartées
+- **Image en un seul étage, sur l'image uv** : environ deux fois plus lourde, et elle embarque des outils inutiles à l'exécution.
+- **Build multi-arch dans GitHub Actions, poussé sur GHCR** : build lent sous émulation QEMU, un jeton de plus à gérer, et c'est déjà du déploiement continu. On y viendra quand on automatisera le déploiement.
+- **Fichier de base plus un fichier de surcharge** (`compose.prod.yml`) : il faut empiler les `-f`, et c'est facile d'en oublier un.
+- **ngrok** pour le développement : un compte et un token de plus. L'URL fixe ne vaut pas ce coût en semaine 1.
+- **Migrations dans un script d'entrée de chaque conteneur** : répétées à chaque redémarrage, et deux rôles dans une même commande.
+- **Un `env_file: .env` commun** : l'API recevrait le token du bot, ce qui contredit l'ADR-005.
+- **Les secrets Docker (`/run/secrets`)** : les secrets n'apparaîtraient plus dans `docker inspect`, mais il faudrait configurer `secrets_dir` et gérer un fichier par secret. C'est possible plus tard.
+
+### Conséquences
+- **Le port de Postgres est publié sur `127.0.0.1` en production aussi.** Un fichier unique ne permet pas de le publier seulement en dev. C'est sans risque, car l'adresse de boucle locale n'est pas joignable de l'extérieur et n'est pas concernée par le contournement d'ufw par Docker. Cela permet aussi d'accéder à `psql` par un tunnel SSH.
+- **L'URL de `cloudflared` change à chaque démarrage du tunnel**, donc il faut relancer `set-webhook` à chaque fois en dev.
+- **Chaque déploiement reconstruit l'image sur la VM**, en 1 à 2 minutes sur Ampere.
+- **Ajouter une variable d'environnement se fait à deux endroits :** dans `.env` et dans la liste du service concerné. C'est le prix du moindre privilège.
