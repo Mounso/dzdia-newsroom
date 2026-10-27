@@ -71,3 +71,24 @@ Les 8 articles d'El Watan sont remplacés par les 8 articles les plus récents d
 - Algérie 360 publie beaucoup de brèves et d'articles repris d'autres médias. Les textes seront plus courts que ceux d'El Watan, donc il y aura moins d'éléments critiques par article.
 - L'échantillon perd un grand quotidien de référence. À reconsidérer si El Watan redevient accessible avant l'étiquetage.
 - Algérie 360 insère dans le corps de ses articles des renvois « À LIRE AUSSI » vers d'autres articles : 20 lignes sur les 8 articles. Ces lignes sont retirées par `clean_text` (couvert par un test), en repartant du HTML stocké. Sinon, des faits étrangers à l'article seraient comptés comme « trouvés » dans la référence.
+
+---
+
+## ADR-003 — Relecture des références automatisée, titres inclus, articles payants exclus
+
+**Date :** 2026-10-27 · **Statut :** accepté · **Modifie :** ADR-001 (points 2 et 3)
+
+### Contexte
+L'ADR-001 prévoyait qu'Abdou relise à la main les 16 textes de référence. Abdou a choisi de déléguer cette relecture. Claude l'a remplacée par une vérification systématique : pour chaque article, on compare l'extraction précise avec une extraction plus permissive (`favor_recall`) pour repérer les paragraphes perdus, et on cherche du texte parasite (abonnement, cookies, « lire la suite »). Cette vérification a trouvé deux défauts :
+1. `tsa-07` était un article **payant**, tronqué par l'appel « Abonnez-vous… pour lire la suite ». Sa référence était donc incomplète.
+2. **Aucune référence ne contenait le titre**, qui porte pourtant des faits (noms, chiffres). C'est même ce que la v1 devine à partir du slug de l'URL.
+
+### Décision
+- Les articles payants sont exclus : `extract_main_text` lève `PaywallError` quand le HTML contient un marqueur de paywall. `tsa-07` est remplacé par l'entrée suivante du flux au moment de l'échantillonnage, `tsa-08` (`?p=304027`).
+- Le titre RSS est placé en tête de chaque texte de référence.
+- Les 16 textes sont marqués `reviewed` après la vérification automatique, qui ne signale plus aucun défaut.
+
+### Conséquences et limites
+- **Personne n'a relu les textes.** Une erreur d'extraction plus subtile reste possible, par exemple un paragraphe absent des deux modes d'extraction. On compensera pendant l'étiquetage : chaque élément `NOT_IN_SOURCE` est vérifié sur le site lui-même avant d'être confirmé.
+- `tsa-07` n'était pas l'original d'un doublon opaque, donc les 4 doublons ne changent pas.
+- Les articles payants biaisent l'échantillon vers les contenus gratuits. C'est acceptable : le bot ne pourra de toute façon pas lire les articles payants.

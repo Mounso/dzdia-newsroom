@@ -34,19 +34,33 @@ def clean_text(text: str) -> str:
     return "\n".join(line for line in text.splitlines() if line.strip())
 
 
-def extract_main_text(html: str) -> str:
+class PaywallError(ExtractionError):
+    pass
+
+
+# Truncated premium articles: the reference would miss facts that v1 may state correctly.
+_PAYWALL_MARKERS = ("lire la suite de cet article", "réservé aux abonnés")
+
+
+def extract_main_text(html: str, title: str) -> str:
+    """Article reference text: headline (it carries facts too) + cleaned body."""
+    lowered = html.lower()
+    if any(marker in lowered for marker in _PAYWALL_MARKERS):
+        raise PaywallError("article is truncated by a paywall")
     text = trafilatura.extract(
         html, include_comments=False, include_tables=True, favor_precision=True
     )
     if not text or not text.strip():
         raise ExtractionError("trafilatura found no readable article body")
-    return clean_text(str(text))
+    body = clean_text(str(text))
+    title = title.strip()
+    return body if not title or body.startswith(title) else f"{title}\n{body}"
 
 
-def reextract(meta: SnapshotMeta, snapshot_dir: Path) -> SnapshotMeta:
+def reextract(meta: SnapshotMeta, snapshot_dir: Path, title: str) -> SnapshotMeta:
     """Rebuild the text from the stored HTML (no refetch), e.g. after improving the cleaning."""
     html = html_path(snapshot_dir, meta.snapshot_id).read_text(encoding="utf-8")
-    text = extract_main_text(html)
+    text = extract_main_text(html, title)
     text_path(snapshot_dir, meta.snapshot_id).write_text(text, encoding="utf-8")
     return meta.model_copy(
         update={"text_sha256": sha256_text(text), "n_chars": len(text), "reviewed": False}
@@ -71,7 +85,7 @@ async def snapshot_item(
     response = await client.get(item.url, headers={"User-Agent": USER_AGENT})
     response.raise_for_status()
     html = response.text
-    text = extract_main_text(html)
+    text = extract_main_text(html, item.title)
 
     snapshot_dir.mkdir(parents=True, exist_ok=True)
     html_path(snapshot_dir, item.item_id).write_text(html, encoding="utf-8")

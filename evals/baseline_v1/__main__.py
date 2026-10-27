@@ -96,9 +96,10 @@ async def cmd_snapshot(paths: Paths) -> None:
 
 
 def cmd_reextract(paths: Paths) -> None:
+    titles = {i.item_id: i.title for i in read_jsonl(paths.sample, SampleItem)}
     metas = latest_by(read_jsonl(paths.snapshots_meta, SnapshotMeta), lambda m: m.snapshot_id)
     for snapshot_id, meta in metas.items():
-        updated = reextract(meta, paths.snapshot_dir)
+        updated = reextract(meta, paths.snapshot_dir, titles[snapshot_id])
         if updated.text_sha256 != meta.text_sha256:
             print(f"changed {snapshot_id}: {meta.n_chars} -> {updated.n_chars} chars")
         metas[snapshot_id] = updated if updated.text_sha256 != meta.text_sha256 else meta
