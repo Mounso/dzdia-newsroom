@@ -1,6 +1,8 @@
 # Commands
 - Install: `uv sync`
 - Tests: `uv run pytest -q` | single: `uv run pytest <path> -q --tb=short`
+- DB integration tests (`tests/db/`) run only when `TEST_DATABASE_URL` is set (CI sets it); each test uses a throwaway schema.
+- Migrations: `uv run python -m dzdia_newsroom.db.migrate` (needs `DATABASE_URL`)
 - Types & lint: `uv run mypy && uv run ruff check .`
 - Baseline v1 eval: `uv run python -m evals.baseline_v1 --help`
 - Local stack (from week 1, needs Docker): `docker compose --profile dev up -d`

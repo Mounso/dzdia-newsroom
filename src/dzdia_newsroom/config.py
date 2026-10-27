@@ -16,6 +16,19 @@ class Settings(BaseSettings):
     llm_max_concurrency: int = 2
 
 
+class DatabaseSettings(BaseSettings):
+    """Kept apart from `Settings` so DB commands (migrations, worker) need no LLM key."""
+
+    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
+
+    database_url: SecretStr
+
+
 @lru_cache
 def get_settings() -> Settings:
     return Settings()  # values come from the environment
+
+
+@lru_cache
+def get_database_settings() -> DatabaseSettings:
+    return DatabaseSettings()  # values come from the environment

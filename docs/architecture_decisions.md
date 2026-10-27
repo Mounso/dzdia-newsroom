@@ -92,3 +92,68 @@ L'ADR-001 prévoyait qu'Abdou relise à la main les 16 textes de référence. Ab
 - **Personne n'a relu les textes.** Une erreur d'extraction plus subtile reste possible, par exemple un paragraphe absent des deux modes d'extraction. On compensera pendant l'étiquetage : chaque élément `NOT_IN_SOURCE` est vérifié sur le site lui-même avant d'être confirmé.
 - `tsa-07` n'était pas l'original d'un doublon opaque, donc les 4 doublons ne changent pas.
 - Les articles payants biaisent l'échantillon vers les contenus gratuits. C'est acceptable : le bot ne pourra de toute façon pas lire les articles payants.
+
+---
+
+## ADR-004 — Socle d'exécution : webhook Telegram, file Postgres, worker et déploiement
+
+**Date :** 2026-10-27 · **Statut :** accepté (sauf le nom d'hôte HTTPS, à confirmer)
+
+### Contexte
+Livrable de la semaine 1 (cahier des charges v2.1, §7) : un webhook Telegram en FastAPI, Postgres et une file de travail, déployés sur une VM. Le cahier fixe déjà :
+- la file : une table Postgres avec `SELECT … FOR UPDATE SKIP LOCKED`, sans Redis (§3.1, point 5) ;
+- les services `api`, `worker` et `postgres+pgvector` dans docker compose, sur une VM et pas sur Cloud Run (§2.4, §3.2) ;
+- une abstraction `Channel`, dont Telegram n'est qu'un adaptateur ;
+- une liste blanche d'identifiants Telegram (§3.7).
+
+Restaient à trancher : le driver Postgres et les migrations, les garanties de la file, la VM et le HTTPS.
+
+### Décision
+1. **Deux processus, une seule image.**
+   - `api` (FastAPI) ne fait qu'acquitter et mettre en file.
+   - `worker` exécute les jobs.
+   - Ils tournent dans compose avec `postgres` (`pgvector/pgvector:pg16`) et, en production, `caddy`.
+2. **Webhook `POST /webhooks/telegram`.**
+   - Il vérifie l'en-tête `X-Telegram-Bot-Api-Secret-Token` par une comparaison à temps constant.
+   - Il valide un `Update` minimal et applique la liste blanche (utilisateurs et groupe d'équipe).
+   - Il insère un job avec la clé unique `telegram:<update_id>` (`ON CONFLICT DO NOTHING`), puis répond 200. Il ne fait rien d'autre.
+   - Les updates refusés reçoivent aussi un 200, pour que Telegram ne les renvoie pas, et ils sont journalisés.
+3. **File maison, livraison « au moins une fois ».**
+   - **Table `jobs`** : `kind`, `payload jsonb`, `status`, `attempts`, `run_after`, `locked_until`, `dedup_key` unique.
+   - **Prise d'un job** : `FOR UPDATE SKIP LOCKED`, qui le passe à `running` et pose un bail (`locked_until`). Le worker prolonge le bail pendant les jobs longs. Un job dont le bail a expiré redevient éligible, ce qui couvre le cas d'un worker mort.
+   - **Échec** : nouvel essai avec un backoff exponentiel via `run_after`. Après `max_attempts`, le job passe au statut `dead` pour être inspecté.
+   - **Réveil** : `LISTEN/NOTIFY` sur le canal `jobs`, plus un polling de secours toutes les quelques secondes, au cas où une notification se perdrait.
+4. **psycopg 3 async, en SQL brut.**
+   - Requêtes dans `db/repository.py`, lignes mappées en modèles Pydantic dans `db/models.py`.
+   - Migrations : des fichiers SQL numérotés dans `db/migrations/`. Un petit runner les applique, chacun dans une transaction, et les enregistre dans `schema_migrations`. Il tourne au déploiement, avant `api` et `worker`.
+   - Ce choix s'écarte du brouillon du cahier, qui prévoyait asyncpg. psycopg 3 est mieux typé pour mypy strict, gère nativement `LISTEN/NOTIFY` en async (`conn.notifies()`) et c'est le driver de référence. L'écart de performance ne compte pas à notre volume.
+5. **Client Telegram écrit directement en `httpx`**, dans `channels/telegram.py`, derrière le protocole `Channel` de `channels/base.py`.
+   - On n'écrit que les méthodes nécessaires (`setWebhook`, `sendMessage`…), avec un timeout, des réessais bornés et une journalisation de chaque appel.
+   - On respecte le `retry_after` que Telegram renvoie avec ses 429.
+   - On n'applique jamais `parse_mode` Markdown à une sortie LLM (bug n°7 de la v1). On envoie du texte brut, ou du HTML échappé par le code.
+6. **Hébergement sur Oracle Cloud, Ampere A1 (ARM64, Always Free).**
+   - Les images de base (`python:3.12-slim`, `pgvector/pgvector:pg16`) existent en arm64.
+   - Si le compte Oracle est refusé, on se replie sur une GCP e2-micro (1 Go de RAM, avec du swap).
+7. **HTTPS : Caddy, qui gère Let's Encrypt automatiquement.**
+   - Nom d'hôte cible : un sous-domaine de dzdia.com (par exemple `bot.dzdia.com`), à demander pendant l'échange de découverte.
+   - En attendant, un sous-domaine gratuit DuckDNS.
+   - Le domaine `*.onrender.com` déjà utilisé par Abdou ne sert pas : il ne vaut que pour les services hébergés chez Render.
+
+### Alternatives écartées
+- **Redis + Celery ou RQ** : un service de plus pour un débit de quelques messages par heure.
+- **procrastinate ou pgqueuer** : ces bibliothèques reposent sur les mêmes mécanismes Postgres. Le code maison tient en environ 150 lignes, se contrôle entièrement et constitue une matière d'entretien.
+- **Garder la transaction ouverte pendant tout le job**, sans bail : cela bloque une connexion pendant des appels LLM de plusieurs minutes.
+- **Polling seul** : il est conservé, mais seulement en secours de `LISTEN/NOTIFY`.
+- **asyncpg** : son typage passe par des stubs tiers.
+- **SQLAlchemy 2 avec Alembic** : trop de concepts pour quelques tables, et pgvector et `tsvector` demandent quand même du SQL.
+- **aiogram ou python-telegram-bot** : ces frameworks gèrent eux-mêmes le cycle de vie et les handlers, en concurrence avec notre file et notre boucle d'agent.
+- **Long polling (`getUpdates`)** : il se passerait de HTTPS, mais un processus devrait tourner en permanence pour lire les messages, et le cahier retient le webhook.
+- **Un worker en tâche asyncio dans l'API** : un job bloquant ou un crash retarderait les acquittements.
+- **Un certificat auto-signé transmis à `setWebhook`** : renouvellement manuel, et une solution peu standard.
+
+### Conséquences
+- **Livraison « au moins une fois » : un job peut être exécuté deux fois.** Les handlers doivent être idempotents, ou enregistrer leurs effets. Exemple : l'outil WordPress note le brouillon créé avant de rendre la main. Un message Telegram envoyé en double est toléré en semaine 1.
+- **La table `jobs` grossit avec le temps** : il faudra purger les jobs terminés au-delà de N jours (plus tard).
+- **Périmètre de la semaine 1** : un seul type de job, qui répond dans Telegram pour prouver la chaîne webhook → file → worker → réponse. Les vrais flux arrivent en semaine 2.
+- **Ce qu'il faut à Abdou** : WSL et Docker sur son poste, un compte Oracle Cloud, un bot créé avec BotFather. Il faut aussi, dans `.env`, les variables `TELEGRAM_BOT_TOKEN`, `TELEGRAM_WEBHOOK_SECRET` et les identifiants de la liste blanche.
+- **À ajouter aux questions de découverte (§9)** : obtenir un sous-domaine de dzdia.com et l'identifiant du groupe Telegram de l'équipe.
