@@ -14,13 +14,14 @@
   1. options présentées en tableau (principe, pour, contre), une recommandation, et les petits choix à part ; Abdou répond en général « A + mes choix » ;
   2. code et tests, puis ruff, `ruff format`, mypy strict et pytest sous Windows, puis la suite Postgres dans Docker (procédure dans `CLAUDE.md`, en arrière-plan) ;
   3. mise à jour de la doc concernée et du statut du point dans `docs/reviews/2026-10-28-design-review.md`, puis de ce fichier et de `docs/fiche_de_suivi.md` (journal, tableau d'état, concepts, questions de recruteurs, chiffres, limites) ;
-  4. demander avant de commiter. « Commite et pousse » couvre les deux. Commits sans `Co-Authored-By` ni mention de Claude ; indexer les fichiers un par un (jamais `git add -A`) et vérifier que la fiche n'est pas dedans. **Mettre ce fichier dans son état « commité et poussé » avant le commit**, pour qu'il ne soit pas faux juste après. Abdou vérifie lui-même la CI dans l'onglet Actions.
+  4. demander avant de commiter. « Commite et pousse » couvre les deux. Commits sans `Co-Authored-By` ni mention de Claude ; indexer les fichiers un par un (jamais `git add -A`) et vérifier que la fiche n'est pas dedans. **Mettre ce fichier dans son état « commité et poussé » avant le commit**, pour qu'il ne soit pas faux juste après. Après un push, Claude vérifie lui-même la CI avec `gh` et le dit à Abdou.
 - **Pièges déjà rencontrés :**
   - un script Python avec du texte français passé par un heredoc Bash échoue (unicode, guillemets) : écrire le script dans le scratchpad **avec l'outil Write**, puis `uv run python -I -X utf8 <fichier>`. `-I` ignore les variables `PYTHON*`, donc `PYTHONUTF8=1` est sans effet : c'est `-X utf8` qui compte (sinon un `print` d'un caractère comme `≥` plante en cp1252) ;
   - un `write_text` Python sous Windows écrit des fins de ligne CRLF : écrire avec `write_bytes(texte.encode("utf-8"))` ;
   - `caplog` ne capture pas le niveau INFO par défaut : `caplog.set_level(logging.INFO, logger=...)` ;
   - le hook de formatage retire un import ajouté avant son premier usage : ajouter l'usage d'abord, ou vérifier les imports après coup ;
   - `sleep` au premier plan est bloqué : lancer les commandes longues en arrière-plan et attendre la notification ;
+  - un hook d'arrêt refuse de clore un tour qui n'a ni vérification (tests, typage) ni question de décision en attente : finir chaque tour par ruff, mypy et pytest, ou par un vrai choix pour Abdou (options en tableau) ;
   - pour épingler une image ou une action (S1) : `docker buildx imagetools inspect <image:tag>` donne le digest d'index multi-architecture ; `git ls-remote https://github.com/<owner>/<repo> 'refs/tags/<tag>^{}'` donne le SHA de commit d'une action (sans `gh`) ; l'API `https://hub.docker.com/v2/repositories/<repo>/tags?name=<préfixe>` liste les tags. uv ne publie plus de tags versionnés `bookworm` : la procédure de test Docker utilise `ghcr.io/astral-sh/uv:0.13.6-python3.12-trixie-slim`.
 - **Sessions du 2026-10-28 :**
   - **Audit complet :** `docs/reviews/2026-10-28-design-review.md`. Chaque point a un identifiant et un statut. Corrigés : B1, B2, B3, B4, B5, B6, R1, R2, S1, S2. Ouverts : B7, R3, R7, R9, R11, S5, S6 ; S4 documenté ; prévus plus tard : R4, R5, R6, R8, R10, S3, et les questions d'architecture A1 à A5 (semaine 2).
@@ -35,12 +36,14 @@
   - `e5d612d` : une passation, qui met à jour ce fichier ;
   - `df96fa1` : B6 ;
   - `c578779` : S1, S2 et la couverture ;
-  - un dernier commit de passation, qui met à jour ce fichier.
+  - `d2e1090` : une passation ;
+  - un dernier commit de passation, qui note l'accès de Claude à la CI.
 
   L'arbre de travail est propre.
 
 - **Dépôt GitHub :** `origin` = https://github.com/Mounso/dzdia-newsroom. Tout est sur `main`. Le 2026-10-27, l'historique a été réécrit et poussé en force pour retirer les mentions de co-auteur : **aucun commit ne porte de ligne `Co-Authored-By`**, et il ne faut pas en ajouter.
-- **CI :** trois jobs (`checks`, `audit`, `image`), tous verts sur `c578779` (vérifié par Abdou dans l'onglet Actions le 2026-10-28), donc B6 compris. Le job `audit` tourne aussi chaque lundi. Claude ne peut pas lire la CI : `gh` n'est pas installé et le dépôt n'est pas lisible par l'API publique.
+- **CI :** trois jobs, tous verts sur `c578779` et `d2e1090` (B6 compris) : `checks` 38 s, `audit` 11 s, `image` 2 min 08 (build arm64 sous QEMU compris). Le job `audit` tourne aussi chaque lundi. Dependabot a déjà fait un premier passage sur ses 4 écosystèmes, sans PR : tout était à jour.
+- **Claude peut lire la CI** avec `gh` (installé le 2026-10-28, version 2.103.3), connecté avec un jeton fine-grained en lecture seule d'Abdou, limité à ce dépôt et stocké dans le gestionnaire d'identifiants Windows. Tant que l'app n'est pas redémarrée, appeler `gh` par son chemin complet : `"/c/Program Files/GitHub CLI/gh.exe"`. Commandes utiles : `gh run list -R Mounso/dzdia-newsroom`, `gh run view <id> --log-failed`. Le jeton ne permet ni d'écrire ni de relancer un run, et il expire : s'il est refusé, demander à Abdou de le renouveler.
 - **Fichiers locaux, jamais commités** (exclus via `.git/info/exclude`) :
   - `Refactorisation DzdiaBot v2.1.md` : le cahier des charges complet (périmètre, architecture cible, feuille de route, questions de découverte) ;
   - `docs/fiche_de_suivi.md` : la fiche de préparation aux entretiens d'Abdou. **La mettre à jour à la fin de chaque étape**, en même temps que ce fichier ;
