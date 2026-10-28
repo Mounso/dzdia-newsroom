@@ -80,7 +80,10 @@ def test_build_report_renders_tables() -> None:
     ]  # fmt: skip
     runs = [_run("r1", "a"), _run("r2", "a-opaque")]
     extractions = [
-        ExtractionRecord(run_id=r, model="x", prompt_version="extract-v1") for r in ("r1", "r2")
+        ExtractionRecord(
+            run_id=r, model="x", prompt_version="extract-v1", created_at=datetime.now(UTC)
+        )
+        for r in ("r1", "r2")
     ]
     elements = [_element("e1", "r1", "a", "found"), _element("e2", "r2", "a-opaque", "found")]
 

@@ -53,7 +53,8 @@ Every step is idempotent and resumable: records carry deterministic ids and re-r
 
 - Article text and raw model outputs are copyrighted or derived from copyrighted text: they stay in `evals/.data/` (gitignored and excluded from Docker builds).
 - The repository keeps only the sample, snapshot metadata and hashes, and later the human labels and the report.
-- Run records carry the model name, the prompt version and a timestamp. Extraction records carry the model and prompt version but no timestamp yet (B5 in the design review).
+- Run and extraction records carry the model name, the prompt version, a timestamp and the latency.
+- **Element ids are derived from the content**, not from the position in the extractor output: `<run_id>#<type>:<hash>`, where the hash covers the type and the value (Unicode NFC, case folded, whitespace collapsed; accents kept). A repeat of the same value in one run gets a suffix `~2`, `~3`. A re-extraction that finds the same element gives it the same id, so its human label still applies; a changed element gets a new id and goes back to pending, never inheriting another element's label. The labels file holds only ids and verdicts, never model output.
 
 ## Status
 
@@ -61,7 +62,7 @@ Every step is idempotent and resumable: records carry deterministic ids and re-r
 |---|---|
 | `sample`, `snapshot`, review | Done: 16 articles and 4 opaque duplicates; references checked automatically (ADR-0003). |
 | `run` | Done: 144/144 runs with `gemini-3.1-flash-lite-preview`. Median latency 7.7 s, maximum 87.9 s. |
-| `extract` | Paused at 20/144: the free tier of the extraction model allows 20 requests per day. The extractor model must also be chosen (see below). |
+| `extract` | To be run again from zero (0/144): the 20 extractions made before the B5 fix have no timestamp and were set aside locally. The free tier of the extraction model allows 20 requests per day, and the extractor model must be chosen first (see below). |
 | `match`, labeling, `report` | Not started. |
 
 ## Known limitations
@@ -71,7 +72,7 @@ Every step is idempotent and resumable: records carry deterministic ids and re-r
 - **Extractor recall.** Elements the extractor misses are invisible to the metrics. The human labeler checks the extracted list while labeling.
 - **Extractor choice.** The model under test cannot extract its own elements (self-evaluation bias). A lighter model tested on 20 runs found 76 % of distinct elements but only 2 of 7 quotes and 8 of 16 organizations, so it would underestimate hallucinations; it was rejected. All 144 extractions will be redone with a single model once it is chosen.
 - **Matcher false positives.** An element can be "found" in a different context than the one stated. The 20 % audit sample measures this.
-- **Open issues in the harness** (from the [design review](../reviews/2026-10-28-design-review.md)): element ids depend on their position in the extractor output, so labels must not survive a re-extraction (B5); the output-level rate is a lower bound while elements are pending (B6); two adjacent numbers can be read as one (B7).
+- **Open issues in the harness** (from the [design review](../reviews/2026-10-28-design-review.md)): the output-level rate is a lower bound while elements are pending (B6); two adjacent numbers can be read as one (B7).
 
 ## Reproducing
 

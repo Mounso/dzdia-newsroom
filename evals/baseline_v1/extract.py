@@ -1,7 +1,19 @@
 """Extract the critical elements (names, numbers, dates, quotes) stated in each v1 output."""
 
+import hashlib
+import time
+import unicodedata
+from collections import Counter
+from datetime import UTC, datetime
+
 from evals.baseline_v1.llm import StructuredGenerator
-from evals.baseline_v1.schemas import ElementRecord, ExtractedElements, ExtractionRecord, RunRecord
+from evals.baseline_v1.schemas import (
+    ElementRecord,
+    ElementType,
+    ExtractedElements,
+    ExtractionRecord,
+    RunRecord,
+)
 from evals.baseline_v1.v1_prompts import INSUFFICIENT_TEXT_MARKER
 
 EXTRACTION_PROMPT_VERSION = "extract-v1"
@@ -38,34 +50,64 @@ def _is_kept(value: str) -> bool:
     return bool(value.strip()) and value.strip().casefold() != "dzdia"
 
 
+def _identity(value: str) -> str:
+    """Unicode NFC, case folded, whitespace collapsed. Accents are kept: "Sétif" and "Setif"
+    stay distinct, so a changed spelling is labeled again rather than merged."""
+    return " ".join(unicodedata.normalize("NFC", value).casefold().split())
+
+
+def element_id(run_id: str, type_: ElementType, value: str, occurrence: int = 1) -> str:
+    """Derived from the content, not from the position in the extractor output (B5).
+
+    A re-extraction that finds the same element gives it the same id, so its human label still
+    applies; a changed element gets a new id and goes back to pending, never inheriting another
+    element's label. `occurrence` numbers repeats of the same value within a run (2, 3...).
+    """
+    digest = hashlib.sha256(f"{type_}\x1f{_identity(value)}".encode()).hexdigest()[:10]
+    suffix = "" if occurrence == 1 else f"~{occurrence}"
+    return f"{run_id}#{type_}:{digest}{suffix}"
+
+
 async def extract_run(
     generator: StructuredGenerator, run: RunRecord
 ) -> tuple[ExtractionRecord, list[ElementRecord]]:
     record = ExtractionRecord(
-        run_id=run.run_id, model=generator.model, prompt_version=EXTRACTION_PROMPT_VERSION
+        run_id=run.run_id,
+        model=generator.model,
+        prompt_version=EXTRACTION_PROMPT_VERSION,
+        created_at=datetime.now(UTC),
     )
     text = run.output_text or ""
     if not text.strip() or INSUFFICIENT_TEXT_MARKER in text:
         return record, []
+    started = time.perf_counter()
     try:
         extracted = await generator.generate_structured(
             build_extraction_prompt(text), ExtractedElements
         )
     except Exception as exc:
         return record.model_copy(update={"error": repr(exc)}), []
+    latency_ms = int((time.perf_counter() - started) * 1000)
 
-    kept = [e for e in extracted.elements if _is_kept(e.value)]
-    elements = [
-        ElementRecord(
-            element_id=f"{run.run_id}#{index}",
-            run_id=run.run_id,
-            item_id=run.item_id,
-            condition=run.condition,
-            task=run.task,
-            type=e.type,
-            value=e.value.strip(),
-            context=e.context.strip()[:200],
+    seen: Counter[tuple[ElementType, str]] = Counter()
+    elements: list[ElementRecord] = []
+    for e in extracted.elements:
+        if not _is_kept(e.value):
+            continue
+        value = e.value.strip()
+        key = (e.type, _identity(value))
+        seen[key] += 1
+        elements.append(
+            ElementRecord(
+                element_id=element_id(run.run_id, e.type, value, seen[key]),
+                run_id=run.run_id,
+                item_id=run.item_id,
+                condition=run.condition,
+                task=run.task,
+                type=e.type,
+                value=value,
+                context=e.context.strip()[:200],
+            )
         )
-        for index, e in enumerate(kept)
-    ]
-    return record.model_copy(update={"n_elements": len(elements)}), elements
+    record = record.model_copy(update={"n_elements": len(elements), "latency_ms": latency_ms})
+    return record, elements

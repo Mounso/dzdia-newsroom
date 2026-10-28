@@ -1,20 +1,22 @@
-# Statut — 2026-10-28 (audit, lot rapide, documentation, puis B1 et R1 faits)
+# Statut — 2026-10-28 (audit, lot rapide, documentation, B1, R1 et B5 faits)
 
 ## Pour reprendre dans une nouvelle session
 - **Session du 2026-10-28 :**
   - **Audit complet :** voir `docs/reviews/2026-10-28-design-review.md`. Chaque point a un identifiant et un statut.
   - **Lot rapide corrigé :** B2, B3, B4 et R2.
   - **B1 et R1 corrigés** (option A pour les deux, choisie par Abdou) : voir le point 12 de « Fait et testé ».
+  - **B5 corrigé** (option A, avec la date d'`ExtractionRecord`) : voir le point 13.
   - **Documentation professionnelle en anglais :** index dans `docs/README.md`.
   - **ADR :** ils sont maintenant **un fichier par décision** dans `docs/adr/` (format MADR, modèle `template.md`, index dans `README.md`). `docs/architecture_decisions.md` est supprimé ; les originaux en français restent dans l'historique Git (commit `8e32200`). Le **prochain ADR est `docs/adr/0007-…md`**, en anglais. Il faut l'ajouter à l'index.
   - **Règle :** quand un comportement change, mettre à jour la doc concernée et le statut du point dans la revue de conception.
   - **Tout est commité et poussé sur `main`** (voir « Dernier commit » ci-dessous).
-- **Par où commencer :** lire ce fichier, puis les correctifs restants de l'audit (B5, B6, puis S1, S2 et la couverture ; voir « Prochaines étapes »), puis attaquer l'étape 2 des « Prochaines étapes » (le déploiement sur la VM). Comme c'est un nouveau module, commencer par poser 3 ou 4 questions d'architecture à Abdou, puis écrire l'**ADR-0007** (`docs/adr/0007-…md`). Pistes de questions : sauvegardes `pg_dump` (fréquence, destination, rétention), procédure de déploiement (`git pull` puis `compose up --build`, ou un script), pare-feu (règles de sécurité Oracle et ufw, ports 22, 80 et 443 seulement) et accès SSH (clé seule, utilisateur non-root), DuckDNS en attendant `bot.dzdia.com`.
+- **Par où commencer :** lire ce fichier, puis les correctifs restants de l'audit (B6, puis S1, S2 et la couverture ; voir « Prochaines étapes »), puis attaquer l'étape 2 des « Prochaines étapes » (le déploiement sur la VM). Comme c'est un nouveau module, commencer par poser 3 ou 4 questions d'architecture à Abdou, puis écrire l'**ADR-0007** (`docs/adr/0007-…md`). Pistes de questions : sauvegardes `pg_dump` (fréquence, destination, rétention), procédure de déploiement (`git pull` puis `compose up --build`, ou un script), pare-feu (règles de sécurité Oracle et ufw, ports 22, 80 et 443 seulement) et accès SSH (clé seule, utilisateur non-root), DuckDNS en attendant `bot.dzdia.com`.
 - **Derniers commits :**
   - `dbd3e51` : le lot rapide de l'audit (B2, B3, B4, R2) ;
   - `b58dbc9` : la documentation et le découpage des ADR ;
   - `1152c3f` : le commit de passation, qui met à jour ce fichier ;
-  - le commit « Carry Telegram retry_after to the job queue and release jobs at shutdown » : B1 et R1, avec la doc et ce fichier.
+  - `6ed8199` : B1 et R1, avec la doc et ce fichier ;
+  - le commit « Derive eval element ids from content and date extraction records » : B5.
 
   `main` est poussée et l’arbre de travail est propre. Les ADR 0001 à 0006 sont acceptés.
 - **Dépôt GitHub :** `origin` = https://github.com/Mounso/dzdia-newsroom. Tout est sur `main` (la branche `feat/postgres-job-queue` y a été fusionnée en avance rapide). Le 2026-10-27, l'historique a été réécrit et poussé en force pour retirer les mentions de co-auteur : **aucun commit ne porte de ligne `Co-Authored-By`**, et il ne faut pas en ajouter.
@@ -77,9 +79,14 @@
     - **R1 :** `JobRepository.release()`, clôturé par le jeton : `queued`, `attempts - 1`, jeton et bail effacés, `run_after` inchangé. Le worker l'appelle sur `CancelledError`, sous `asyncio.shield` et borné par `release_timeout_s` (3 s). Le bail reste le filet de sécurité.
     - **Options écartées :** pour B1, une hiérarchie d'erreurs commune (`errors.py`, à reconsidérer avec R8) et un « snooze » sans essai ; pour R1, raccourcir seulement le bail, ou allonger la grâce.
     - 10 nouveaux tests (dont 2 contre Postgres) et 1 test réécrit. Doc mise à jour : `job-queue.md`, runbook, deployment, roadmap, revue de conception (B1 et R1 `Fixed`).
+13. **B5** (2026-10-28, option A) :
+    - `element_id = <run_id>#<type>:<hash>` dans `evals/baseline_v1/extract.py` (`element_id()`). Le hash couvre le type et la valeur normalisée (NFC, casse, espaces ; accents gardés). Une valeur répétée dans un run reçoit `~2`, `~3` : la définition de la mesure (ADR-0001) ne change pas.
+    - `ExtractionRecord` a maintenant `created_at` (obligatoire) et `latency_ms`. Les tokens viendront avec R8.
+    - **Options écartées :** une empreinte dans `HumanLabel` (détecte sans prévenir), et des identifiants liés à une extraction (toute réextraction annule les étiquettes).
+    - 5 nouveaux tests, 2 tests adaptés. Doc mise à jour : `docs/evals/baseline-v1.md`, roadmap, revue de conception (B5 `Fixed`).
 
 ## En pause : étape `extract`
-- **État :** 20/144 extractions faites avec `gemini-2.5-flash`. Les 124 autres ont pris des 429 : le free tier est limité à 5 requêtes par minute et 20 par jour. `match` n'est pas lancé.
+- **État :** 0/144. Les 20 extractions faites avec `gemini-2.5-flash` (les 124 autres avaient pris des 429 : le free tier est limité à 5 requêtes par minute et 20 par jour) n'avaient pas de date. Elles ont été déplacées dans `evals/.data/baseline_v1/pre_b5/` (local, rien de supprimé), et `extract` repartira de zéro. `match` n'est pas lancé.
 - **Modèle écarté :** `gemini-3.5-flash-lite`, testé sur les 20 mêmes runs (sorties dans `evals/.data/baseline_v1/compare_gemini-3.5-flash-lite/`). Il retrouve 76 % des éléments distincts, mais seulement 2 citations sur 7 et 8 organisations sur 16 : il sous-estimerait les hallucinations. Le modèle évalué (3.1 Flash Lite) est écarté aussi, à cause du biais d'auto-évaluation.
 - **Pistes, à trancher par Abdou :**
   - un extracteur **Claude**, si ses crédits API sont disponibles vers le **2026-11-03** (à vérifier : l'abonnement Max ne donne a priori pas de crédits API) ;
@@ -89,12 +96,11 @@
 
   Si on change de modèle : questions d'architecture, nouvel ADR, puis on refait les **144** extractions avec un seul modèle. Le script de comparaison est à réécrire, car il était dans un scratchpad.
 - **À corriger avant de relancer :**
-  - **B5 :** les identifiants d'éléments dépendent de leur position ; ajouter aussi une date à `ExtractionRecord`.
   - **B6 :** le taux par sortie est une borne basse tant que des éléments sont en attente.
   - **R8 :** le retry de `GeminiClient` ignore `retryDelay`, et rien ne limite le débit.
 
 ## Prochaines étapes, dans l'ordre
-0. **Correctifs restants de l'audit :** B5, B6 et la date d'`ExtractionRecord` (évals), puis S1, S2 et la couverture de tests en CI. B1 et R1 sont faits. Pour B5, présenter les options à Abdou avant de coder.
+0. **Correctifs restants de l'audit :** B6 (évals), puis S1, S2 et la couverture de tests en CI. B1, R1 et B5 sont faits. Pour B6, présenter les options à Abdou avant de coder.
 1. **Avant tout :** l'échange de découverte avec les journalistes (§9 du cahier des charges). Questions à ajouter :
    - un sous-domaine de dzdia.com pour le webhook (par exemple `bot.dzdia.com`) ;
    - l'identifiant du groupe Telegram de l'équipe ;

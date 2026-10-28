@@ -24,7 +24,7 @@ Status: **Fixed** (with the change that fixed it), **Open**, or **Planned** (sch
 | B2 | Low | `python -m dzdia_newsroom.db.migrate` crashed on Windows (`ProactorEventLoop`) and did not use the JSON log setup. | Fixed |
 | B3 | Low | `CREATE TABLE IF NOT EXISTS schema_migrations` ran before the advisory lock; two concurrent runners could collide on `pg_type`. | Fixed |
 | B4 | Low | The worker ignored the result of `retry_later` and `mark_dead`, and logged "retry in N s" or "dead" even when its lease was lost and the row unchanged. | Fixed |
-| B5 | Medium (latent) | Eval element ids depend on position in the extractor output. | Open |
+| B5 | Medium (latent) | Eval element ids depend on position in the extractor output. | Fixed |
 | B6 | Low | The output-level rate in the eval report is biased low while elements are pending. | Open |
 | B7 | Low | The number regex of the matcher merges two adjacent numbers. | Open |
 
@@ -47,8 +47,9 @@ Status: **Fixed** (with the change that fixed it), **Open**, or **Planned** (sch
 
 - **Where:** [`evals/baseline_v1/extract.py`](../../evals/baseline_v1/extract.py), `element_id = f"{run_id}#{index}"`.
 - **What happens:** if a run is extracted again (planned, since the extractor model will change), `run#3` may designate another element, and a label already entered silently attaches to it. No labels exist yet, so nothing is wrong today.
-- **Fix direction:** an id derived from content (hash of `run_id`, `type`, `value` and occurrence rank), or `type` and `value` copied into `HumanLabel` and checked at import.
-- **Related:** `ExtractionRecord` has no timestamp, although the eval rules require model, date and prompt version on every generated record.
+- **Fix (option A of three, chosen by Abdou):** a content-derived id, `<run_id>#<type>:<sha256 of type and normalized value, 10 hex>`, with `~2`, `~3` for repeats of a value within a run (so the metric's unit is unchanged). Normalization is Unicode NFC, case folding and whitespace collapsing; accents are kept, so a changed spelling is labeled again rather than merged. A changed element gets a new id and goes back to pending: the failure mode is extra labeling, never a wrong label.
+- **Options set aside:** (B) keep positional ids and store a fingerprint of the element in `HumanLabel`, checked at import: it detects instead of preventing, and nearly every label goes stale after a re-extraction. (C) Ids tied to one extraction: the strictest lineage, but any re-extraction voids every label of the run. The value itself cannot be copied into `HumanLabel`, since `labels.jsonl` is committed and must not hold model output.
+- **Related, fixed too:** `ExtractionRecord` now has a required `created_at` and a `latency_ms`. Tokens wait for R8 (the structured client drops `usage_metadata`). The 20 extractions made before the fix had no timestamp and were moved aside locally (`evals/.data/baseline_v1/pre_b5/`); all 144 will be extracted again with one model.
 
 ### B6 — Output-level rate is a lower bound while labels are pending
 
@@ -118,12 +119,12 @@ Strengths worth keeping: constant-time secret comparison; fail-closed allowlist;
 ## 5. Tests
 
 - **Strong functional coverage:** every queue guarantee has a test (fencing, expired lease, concurrent claims, graceful stop, notification), as do the webhook (status codes, deduplication) and the Telegram client (short and long 429, 5xx, network errors, token redaction).
-- **Gaps:** no coverage measurement in CI (`pytest-cov`); no test that re-extracts an already labeled run (B5).
+- **Gaps:** no coverage measurement in CI (`pytest-cov`).
 
 ## 6. Remediation plan
 
 1. ~~**Quick fixes** (no design choice): B2, B3, B4, R2.~~ Done on 2026-10-28 (commit `dbd3e51`).
 2. ~~**B1 and R1:** retries guided by `retry_after`, and releasing jobs on shutdown.~~ Done on 2026-10-28 (option A for both).
-3. **Evals:** B5, B6 and the extraction timestamp, before running `extract` again.
+3. **Evals:** ~~B5 and the extraction timestamp~~ (done on 2026-10-28, option A), then B6, before running `extract` again.
 4. **CI and supply chain:** S1, S2 and coverage measurement.
 5. **Week 2 (ADRs):** A1 to A5, R4, R5, R6, R8, R10.

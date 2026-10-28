@@ -66,12 +66,14 @@ class ExtractionRecord(BaseModel):
     run_id: str
     model: str
     prompt_version: str
+    created_at: datetime
     n_elements: int = 0
     error: str | None = None
+    latency_ms: int | None = None
 
 
 class ElementRecord(BaseModel):
-    element_id: str
+    element_id: str  # derived from the content, see `extract.element_id`
     run_id: str
     item_id: str
     condition: Condition
