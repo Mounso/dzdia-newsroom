@@ -1,15 +1,17 @@
-# Statut — 2026-10-27 (chaîne validée avec le vrai bot de dev)
+# Statut — 2026-10-28 (fin de session : semaine 1 terminée côté code)
 
 ## Pour reprendre dans une nouvelle session
+- **Par où commencer :** lire ce fichier, puis attaquer l'étape 2 des « Prochaines étapes » (le déploiement sur la VM). Comme c'est un nouveau module, commencer par poser 3 ou 4 questions d'architecture à Abdou, puis écrire l'**ADR-007**. Pistes de questions : sauvegardes `pg_dump` (fréquence, destination, rétention), procédure de déploiement (`git pull` puis `compose up --build`, ou un script), pare-feu (règles de sécurité Oracle et ufw, ports 22, 80 et 443 seulement) et accès SSH (clé seule, utilisateur non-root), DuckDNS en attendant `bot.dzdia.com`.
+- **Dernier commit de code :** `18780b4 Add Docker image, compose stack and Caddy entry point (ADR-006)`, suivi du commit de passation qui met ce fichier à jour. `main` est poussée et l’arbre de travail est propre. Les ADR 001 à 006 sont acceptés.
 - **Dépôt GitHub :** `origin` = https://github.com/Mounso/dzdia-newsroom. Tout est sur `main` (la branche `feat/postgres-job-queue` y a été fusionnée en avance rapide). Le 2026-10-27, l'historique a été réécrit et poussé en force pour retirer les mentions de co-auteur : **aucun commit ne porte de ligne `Co-Authored-By`**, et il ne faut pas en ajouter.
-- **CI :** verte sur le commit `3a2a5f3`, test de bout en bout compris (vérifiée par Abdou dans l'onglet Actions). Claude ne peut pas la lire : `gh` n'est pas installé et le dépôt n'est pas lisible par l'API publique.
+- **CI :** verte sur le commit `3a2a5f3`, test de bout en bout compris (vérifiée par Abdou dans l'onglet Actions). Pour `18780b4`, ce n'est pas vérifié : demander à Abdou. Claude ne peut pas la lire : `gh` n'est pas installé et le dépôt n'est pas lisible par l'API publique.
 - **Fichiers locaux, jamais commités** (exclus via `.git/info/exclude`) :
   - `Refactorisation DzdiaBot v2.1.md` : le cahier des charges complet (périmètre, architecture cible, feuille de route, questions de découverte) ;
   - `docs/fiche_de_suivi.md` : la fiche de préparation aux entretiens d'Abdou. **La mettre à jour à la fin de chaque étape**, en même temps que ce fichier.
-- **Environnement :** Windows 11, avec WSL (Ubuntu) et Docker Desktop installés le 2026-10-27. Les tests Postgres tournent dans un conteneur Linux (commande dans `CLAUDE.md`), car psycopg en async ne fonctionne pas avec la boucle asyncio par défaut de Windows.
+- **Environnement :** Windows 11, avec WSL (Ubuntu) et Docker Desktop installés le 2026-10-27. Les tests Postgres tournent dans un conteneur Linux (commande dans `CLAUDE.md`), car psycopg en async ne fonctionne pas avec la boucle asyncio par défaut de Windows. **Docker Desktop doit être lancé** avant toute commande `docker` (il ne l'était pas à la fin de la session).
 - **Vérifications :** ruff, `ruff format` et mypy strict ne signalent rien. Sous Windows, 114 tests passent et 11 sont sautés (les tests Postgres). Dans Docker, les 125 passent.
 - **`.env.example` est illisible pour Claude** (règle de `.claude/settings.json`). Abdou doit y ajouter lui-même les nouvelles variables (voir les étapes 8 et 9 ci-dessous).
-- **`.env` d'Abdou :** il contient un token de bot de dev (actif) et un token de bot de prod (en commentaire).
+- **`.env` d'Abdou :** il contient un token de bot de dev (actif) et un token de bot de prod (en commentaire), `POSTGRES_PASSWORD`, `TELEGRAM_WEBHOOK_SECRET` et `TELEGRAM_ALLOWED_USER_IDS` (son identifiant Telegram : `5271201903`). Claude ne lit jamais `.env` ; pour vérifier une variable non secrète, utiliser `docker inspect` sur le conteneur concerné.
 
 ## Fait et testé
 1. **Socle du dépôt** : uv, ruff, mypy strict, pytest, CI GitHub Actions, `CLAUDE.md`, `.claude/settings.json` (lecture de `.env` bloquée), `config.py` (pydantic-settings).
@@ -65,5 +67,7 @@
 5. **Passe parallèle du LLM-juge** sur les mêmes éléments. Les verdicts sont stockés à part, pour la calibration en semaine 5.
 
 ## Petits points en suspens
-- La pile de dev d'Abdou tourne encore (`docker compose --profile dev`), avec le webhook du bot de dev pointé sur une URL trycloudflare temporaire. Quand on l'arrête, le webhook devient injoignable : Telegram garde les updates en attente jusqu'au prochain `set-webhook`.
-- Ajouter un `.gitattributes` (`* text=auto eol=lf`) : Git signale des conversions CRLF → LF.
+- **Le webhook du bot de dev pointe encore sur une URL trycloudflare morte**, car la pile de dev est arrêtée. Telegram garde les updates en attente (environ 24 h). Pour reprendre les tests en local : `docker compose --profile dev up -d --build`, lire la nouvelle URL dans `docker compose logs cloudflared`, puis relancer `set-webhook`. Le volume `pgdata` de dev contient le job de test (statut `done`).
+- **`.env.example`** : Abdou doit vérifier qu'il liste toutes les variables (`POSTGRES_PASSWORD`, `TELEGRAM_*`, `LOG_FORMAT`, `LOG_LEVEL`, `PUBLIC_HOST`, `API_PORT`, `POSTGRES_PORT`), car Claude ne peut pas le lire.
+- **Avertissements de pytest, sans effet aujourd'hui :** `StarletteDeprecationWarning`, car `TestClient` utilise httpx ; `_UnionGenericAlias`, qui vient de google-genai.
+- **Image Docker de 406 Mo :** les dépendances des évals (trafilatura, google-genai) y sont incluses. On les garde, car la v2 s'en servira dès la semaine 2.
