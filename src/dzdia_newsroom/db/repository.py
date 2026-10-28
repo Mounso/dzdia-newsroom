@@ -104,6 +104,15 @@ class JobRepository:
             error=error,
         )
 
+    async def release(self, job: ClaimedJob) -> bool:
+        """Give the job back at worker shutdown: claimable again at once, in its old place
+        (`run_after` unchanged), and the attempt taken by this claim is returned."""
+        return await self._update_owned(
+            "UPDATE jobs SET status = 'queued', attempts = attempts - 1, locked_until = NULL,"
+            " claim_token = NULL, updated_at = now() " + _OWNED,
+            job,
+        )
+
     async def _update_owned(self, query: LiteralString, job: ClaimedJob, **params: object) -> bool:
         async with self._pool.connection() as conn:
             cursor = await conn.execute(query, {"id": job.id, "token": job.claim_token, **params})

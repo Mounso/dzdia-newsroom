@@ -1,27 +1,29 @@
-# Statut — 2026-10-28 (audit, lot rapide de corrections et documentation faits)
+# Statut — 2026-10-28 (audit, lot rapide, documentation, puis B1 et R1 faits)
 
 ## Pour reprendre dans une nouvelle session
 - **Session du 2026-10-28 :**
   - **Audit complet :** voir `docs/reviews/2026-10-28-design-review.md`. Chaque point a un identifiant et un statut.
   - **Lot rapide corrigé :** B2, B3, B4 et R2.
+  - **B1 et R1 corrigés** (option A pour les deux, choisie par Abdou) : voir le point 12 de « Fait et testé ».
   - **Documentation professionnelle en anglais :** index dans `docs/README.md`.
   - **ADR :** ils sont maintenant **un fichier par décision** dans `docs/adr/` (format MADR, modèle `template.md`, index dans `README.md`). `docs/architecture_decisions.md` est supprimé ; les originaux en français restent dans l'historique Git (commit `8e32200`). Le **prochain ADR est `docs/adr/0007-…md`**, en anglais. Il faut l'ajouter à l'index.
   - **Règle :** quand un comportement change, mettre à jour la doc concernée et le statut du point dans la revue de conception.
   - **Tout est commité et poussé sur `main`** (voir « Dernier commit » ci-dessous).
-- **Par où commencer :** lire ce fichier, puis les correctifs restants de l'audit (voir « Prochaines étapes »), puis attaquer l'étape 2 des « Prochaines étapes » (le déploiement sur la VM). Comme c'est un nouveau module, commencer par poser 3 ou 4 questions d'architecture à Abdou, puis écrire l'**ADR-0007** (`docs/adr/0007-…md`). Pistes de questions : sauvegardes `pg_dump` (fréquence, destination, rétention), procédure de déploiement (`git pull` puis `compose up --build`, ou un script), pare-feu (règles de sécurité Oracle et ufw, ports 22, 80 et 443 seulement) et accès SSH (clé seule, utilisateur non-root), DuckDNS en attendant `bot.dzdia.com`.
+- **Par où commencer :** lire ce fichier, puis les correctifs restants de l'audit (B5, B6, puis S1, S2 et la couverture ; voir « Prochaines étapes »), puis attaquer l'étape 2 des « Prochaines étapes » (le déploiement sur la VM). Comme c'est un nouveau module, commencer par poser 3 ou 4 questions d'architecture à Abdou, puis écrire l'**ADR-0007** (`docs/adr/0007-…md`). Pistes de questions : sauvegardes `pg_dump` (fréquence, destination, rétention), procédure de déploiement (`git pull` puis `compose up --build`, ou un script), pare-feu (règles de sécurité Oracle et ufw, ports 22, 80 et 443 seulement) et accès SSH (clé seule, utilisateur non-root), DuckDNS en attendant `bot.dzdia.com`.
 - **Derniers commits :**
   - `dbd3e51` : le lot rapide de l'audit (B2, B3, B4, R2) ;
   - `b58dbc9` : la documentation et le découpage des ADR ;
-  - un commit de passation, qui met à jour ce fichier.
+  - `1152c3f` : le commit de passation, qui met à jour ce fichier ;
+  - le commit « Carry Telegram retry_after to the job queue and release jobs at shutdown » : B1 et R1, avec la doc et ce fichier.
 
   `main` est poussée et l’arbre de travail est propre. Les ADR 0001 à 0006 sont acceptés.
 - **Dépôt GitHub :** `origin` = https://github.com/Mounso/dzdia-newsroom. Tout est sur `main` (la branche `feat/postgres-job-queue` y a été fusionnée en avance rapide). Le 2026-10-27, l'historique a été réécrit et poussé en force pour retirer les mentions de co-auteur : **aucun commit ne porte de ligne `Co-Authored-By`**, et il ne faut pas en ajouter.
-- **CI :** verte sur le commit `3a2a5f3`, test de bout en bout compris (vérifiée par Abdou dans l'onglet Actions). Pour `18780b4` et les commits du 2026-10-28, ce n'est pas vérifié : demander à Abdou. Claude ne peut pas la lire : `gh` n'est pas installé et le dépôt n'est pas lisible par l'API publique.
+- **CI :** verte sur le commit `3a2a5f3`, test de bout en bout compris (vérifiée par Abdou dans l'onglet Actions). Verte aussi jusqu'à `1152c3f` inclus (vérifiée par Abdou le 2026-10-28). Pour le commit B1/R1, ce n'est pas vérifié : demander à Abdou. Claude ne peut pas la lire : `gh` n'est pas installé et le dépôt n'est pas lisible par l'API publique.
 - **Fichiers locaux, jamais commités** (exclus via `.git/info/exclude`) :
   - `Refactorisation DzdiaBot v2.1.md` : le cahier des charges complet (périmètre, architecture cible, feuille de route, questions de découverte) ;
   - `docs/fiche_de_suivi.md` : la fiche de préparation aux entretiens d'Abdou. **La mettre à jour à la fin de chaque étape**, en même temps que ce fichier.
 - **Environnement :** Windows 11, avec WSL (Ubuntu) et Docker Desktop installés le 2026-10-27. Les tests Postgres tournent dans un conteneur Linux (commande dans `CLAUDE.md`), car psycopg en async ne fonctionne pas avec la boucle asyncio par défaut de Windows. **Docker Desktop doit être lancé** avant toute commande `docker`. S'il ne l'est pas, Claude peut le démarrer avec `Start-Process` sur `Docker Desktop.exe`, puis attendre que `docker info` réponde.
-- **Vérifications (2026-10-28, après le lot rapide) :** ruff, `ruff format` et mypy strict ne signalent rien. Sous Windows, 116 tests passent et 11 sont sautés (les tests Postgres). Dans Docker, les 127 passent. Docker Desktop est installé dans `C:\Users\abdou\AppData\Local\Programs\DockerDesktop\`.
+- **Vérifications (2026-10-28, après B1 et R1) :** ruff, `ruff format` et mypy strict ne signalent rien. Sous Windows, 124 tests passent et 13 sont sautés (les tests Postgres). Dans Docker, les 137 passent. Docker Desktop est installé dans `C:\Users\abdou\AppData\Local\Programs\DockerDesktop\`.
 - **`.env.example` est illisible pour Claude** (règle de `.claude/settings.json`). Abdou doit y ajouter lui-même les nouvelles variables (voir les étapes 8 et 9 ci-dessous).
 - **`.env` d'Abdou :** il contient un token de bot de dev (actif) et un token de bot de prod (en commentaire), `POSTGRES_PASSWORD`, `TELEGRAM_WEBHOOK_SECRET` et `TELEGRAM_ALLOWED_USER_IDS` (son identifiant Telegram : `5271201903`). Claude ne lit jamais `.env` ; pour vérifier une variable non secrète, utiliser `docker inspect` sur le conteneur concerné.
 
@@ -70,6 +72,11 @@
     - `docs/evals/baseline-v1.md`, `docs/roadmap.md`, `docs/reviews/`.
 
     Tous les liens internes ont été vérifiés par un script.
+12. **B1 et R1** (2026-10-28, option A pour les deux) :
+    - **B1 :** `ChannelError` porte `retry_after_s`. Le handler le traduit en `RetryLaterJobError(delay_s)`, une nouvelle exception de `worker/queue.py`. Le worker attend `max(backoff, delay_s × (1 + 0,1 × aléa))` ; l'essai compte toujours ; au-delà de `max_retry_after_s` (1 h), le job passe `dead`.
+    - **R1 :** `JobRepository.release()`, clôturé par le jeton : `queued`, `attempts - 1`, jeton et bail effacés, `run_after` inchangé. Le worker l'appelle sur `CancelledError`, sous `asyncio.shield` et borné par `release_timeout_s` (3 s). Le bail reste le filet de sécurité.
+    - **Options écartées :** pour B1, une hiérarchie d'erreurs commune (`errors.py`, à reconsidérer avec R8) et un « snooze » sans essai ; pour R1, raccourcir seulement le bail, ou allonger la grâce.
+    - 10 nouveaux tests (dont 2 contre Postgres) et 1 test réécrit. Doc mise à jour : `job-queue.md`, runbook, deployment, roadmap, revue de conception (B1 et R1 `Fixed`).
 
 ## En pause : étape `extract`
 - **État :** 20/144 extractions faites avec `gemini-2.5-flash`. Les 124 autres ont pris des 429 : le free tier est limité à 5 requêtes par minute et 20 par jour. `match` n'est pas lancé.
@@ -87,10 +94,7 @@
   - **R8 :** le retry de `GeminiClient` ignore `retryDelay`, et rien ne limite le débit.
 
 ## Prochaines étapes, dans l'ordre
-0. **Correctifs restants de l'audit.** Ce sont des fonctions cœur : présenter 2 ou 3 options à Abdou avant de coder.
-   - **B1 :** le `retry_after` de Telegram doit être transmis à la file.
-   - **R1 :** rendre le job à la file quand le worker s'arrête.
-   - Ensuite B5 et B6 (évals), puis S1, S2 et la couverture de tests en CI.
+0. **Correctifs restants de l'audit :** B5, B6 et la date d'`ExtractionRecord` (évals), puis S1, S2 et la couverture de tests en CI. B1 et R1 sont faits. Pour B5, présenter les options à Abdou avant de coder.
 1. **Avant tout :** l'échange de découverte avec les journalistes (§9 du cahier des charges). Questions à ajouter :
    - un sous-domaine de dzdia.com pour le webhook (par exemple `bot.dzdia.com`) ;
    - l'identifiant du groupe Telegram de l'équipe ;

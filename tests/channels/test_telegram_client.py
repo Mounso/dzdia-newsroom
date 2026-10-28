@@ -111,6 +111,7 @@ async def test_long_retry_after_is_left_to_the_job_queue(
     with pytest.raises(ChannelError, match="rate limited for 120 s") as raised:
         await http(recorder).send_text("111", "x")
     assert not isinstance(raised.value, PermanentChannelError)
+    assert raised.value.retry_after_s == 120  # the queue must wait at least that long
     assert recorder.sleeps == []
 
 

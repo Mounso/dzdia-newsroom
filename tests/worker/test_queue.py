@@ -1,4 +1,5 @@
 import asyncio
+import logging
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from uuid import uuid4
@@ -9,12 +10,22 @@ from dzdia_newsroom.db.models import ClaimedJob
 from dzdia_newsroom.worker.queue import (
     Handler,
     PermanentJobError,
+    RetryLaterJobError,
     Worker,
     WorkerConfig,
     retry_delay_s,
 )
 
-FAST = WorkerConfig(lease_s=1.0, heartbeat_s=0.01, poll_s=0.01, retry_base_s=5, retry_cap_s=300)
+FAST = WorkerConfig(
+    lease_s=1.0,
+    heartbeat_s=0.01,
+    poll_s=0.01,
+    retry_base_s=5,
+    retry_cap_s=300,
+    max_retry_after_s=3600,
+    retry_after_jitter=0.1,
+    release_timeout_s=0.05,
+)
 
 
 def make_job(kind: str = "echo", attempts: int = 1, max_attempts: int = 3) -> ClaimedJob:
@@ -38,6 +49,10 @@ class FakeStore:
     completed: list[int] = field(default_factory=list)
     retried: list[tuple[int, float, str]] = field(default_factory=list)
     dead: list[tuple[int, str]] = field(default_factory=list)
+    released: list[int] = field(default_factory=list)
+    release_started: asyncio.Event = field(default_factory=asyncio.Event)
+    release_stall_s: float = 0.0  # a slow database at shutdown
+    release_owned: bool = True  # False: the job was reclaimed just before the shutdown
 
     async def claim(self, lease_s: float) -> ClaimedJob | None:
         return self.jobs.pop(0) if self.jobs else None
@@ -57,6 +72,12 @@ class FakeStore:
     async def mark_dead(self, job: ClaimedJob, error: str) -> bool:
         self.dead.append((job.id, error))
         return self.lease_kept
+
+    async def release(self, job: ClaimedJob) -> bool:
+        self.release_started.set()
+        await asyncio.sleep(self.release_stall_s)
+        self.released.append(job.id)
+        return self.release_owned
 
 
 def worker(store: FakeStore, handlers: dict[str, Handler]) -> Worker:
@@ -141,6 +162,43 @@ async def test_permanent_error_is_dead_without_retry() -> None:
     assert store.dead == [(1, "PermanentJobError: user not allowed")] and not store.retried
 
 
+def rate_limited(delay_s: float) -> Handler:
+    async def handler(job: ClaimedJob) -> None:
+        raise RetryLaterJobError(f"rate limited for {delay_s:.0f} s", delay_s=delay_s)
+
+    return handler
+
+
+async def test_retry_after_is_waited_with_jitter_after_it() -> None:
+    # Backoff alone would retry in 5 s, inside the rate-limit window.
+    store = FakeStore(jobs=[make_job(attempts=1)])
+    await worker(store, {"echo": rate_limited(120)}).run_once()
+    [(job_id, delay, error)] = store.retried
+    assert (job_id, error) == (1, "RetryLaterJobError: rate limited for 120 s")
+    assert delay == pytest.approx(132.0)  # 120 s plus the 10 % jitter (rand = 1)
+
+
+async def test_short_retry_after_does_not_shorten_the_backoff() -> None:
+    store = FakeStore(jobs=[make_job(attempts=2)])
+    await worker(store, {"echo": rate_limited(1)}).run_once()
+    assert [delay for _, delay, _ in store.retried] == [10.0]
+
+
+async def test_retry_after_over_the_limit_is_dead() -> None:
+    store = FakeStore(jobs=[make_job(attempts=1)])
+    await worker(store, {"echo": rate_limited(7200)}).run_once()
+    assert not store.retried
+    assert store.dead == [
+        (1, "RetryLaterJobError: rate limited for 7200 s (retry-after over 3600 s)")
+    ]
+
+
+async def test_retry_after_on_last_attempt_is_dead() -> None:
+    store = FakeStore(jobs=[make_job(attempts=3, max_attempts=3)])
+    await worker(store, {"echo": rate_limited(60)}).run_once()
+    assert store.dead == [(1, "RetryLaterJobError: rate limited for 60 s")] and not store.retried
+
+
 async def test_unknown_kind_is_dead() -> None:
     store = FakeStore(jobs=[make_job(kind="mystery")])
     await worker(store, {"echo": ok_handler}).run_once()
@@ -187,7 +245,9 @@ async def test_lost_lease_cancels_handler_and_skips_completion() -> None:
     assert not store.completed and not store.retried and not store.dead
 
 
-async def test_worker_cancellation_also_cancels_the_handler() -> None:
+async def start_long_job(store: FakeStore) -> tuple["asyncio.Task[bool]", asyncio.Event]:
+    """Run a 10 s job on `store`; return the worker task once the handler runs, and a flag
+    set when the handler is cancelled."""
     started, cancelled = asyncio.Event(), asyncio.Event()
 
     async def long_running(job: ClaimedJob) -> None:
@@ -198,13 +258,62 @@ async def test_worker_cancellation_also_cancels_the_handler() -> None:
             cancelled.set()
             raise
 
-    store = FakeStore(jobs=[make_job()])
     task = asyncio.create_task(worker(store, {"echo": long_running}).run_once())
     await started.wait()
-    task.cancel()
+    return task, cancelled
+
+
+async def assert_cancelled(task: "asyncio.Task[bool]") -> None:
     with pytest.raises(asyncio.CancelledError):
-        await task
+        await asyncio.wait_for(task, timeout=1)
+
+
+async def test_worker_cancellation_cancels_the_handler_and_releases_the_job(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    caplog.set_level(logging.INFO, logger="dzdia_newsroom.worker.queue")
+    store = FakeStore(jobs=[make_job()])
+    task, cancelled = await start_long_job(store)
+    task.cancel()
+    await assert_cancelled(task)
     assert cancelled.is_set()
+    assert store.released == [1]
+    assert not store.completed and not store.retried and not store.dead
+    assert "released at shutdown" in caplog.text
+
+
+async def test_release_survives_a_second_cancel() -> None:
+    store = FakeStore(jobs=[make_job()], release_stall_s=0.05)
+    task, _ = await start_long_job(store)
+    task.cancel()
+    await store.release_started.wait()
+    task.cancel()  # e.g. Ctrl+C twice, or the caller's own cleanup
+    await assert_cancelled(task)
+    await eventually(lambda: store.released == [1])  # the shielded update still lands
+
+
+async def test_release_after_lease_loss_is_not_logged_as_released(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    store = FakeStore(jobs=[make_job()], release_owned=False)
+    task, _ = await start_long_job(store)
+    task.cancel()
+    await assert_cancelled(task)
+    assert "lease lost before it could be released" in caplog.text
+    assert "released at shutdown" not in caplog.text
+
+
+async def test_stalled_release_does_not_hold_up_the_shutdown(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    store = FakeStore(jobs=[make_job()], release_stall_s=0.5)
+    task, _ = await start_long_job(store)
+    task.cancel()
+    async with asyncio.timeout(0.4):  # bounded by release_timeout_s (0.05 s), not the stall
+        await assert_cancelled(task)
+    assert not store.released
+    assert "release failed at shutdown" in caplog.text
+    await eventually(lambda: store.released == [1])  # let the shielded update end cleanly
 
 
 # --- run_forever -----------------------------------------------------------------------------

@@ -1,5 +1,6 @@
 """Job worker (ADR-004, option 2): short lease renewed by a heartbeat, fenced by a claim token,
-retries with full-jitter exponential backoff, permanent errors never retried.
+retries with full-jitter exponential backoff (never before a rate limit's retry-after),
+permanent errors never retried, current job released at shutdown.
 
 Delivery is at least once: a handler can run twice for the same job (e.g. a worker dies after
 the side effect but before `complete`), so handlers must be idempotent or record their effects.
@@ -27,6 +28,15 @@ class PermanentJobError(Exception):
     """Raised by a handler when retrying cannot help (invalid input, refused user...)."""
 
 
+class RetryLaterJobError(Exception):
+    """Raised by a handler when the job may succeed, but not before `delay_s` (e.g. a rate
+    limit's retry-after). The worker waits at least that long; the attempt still counts."""
+
+    def __init__(self, message: str, *, delay_s: float) -> None:
+        super().__init__(message)
+        self.delay_s = delay_s
+
+
 class JobStore(Protocol):
     """What the worker needs from the queue; implemented by `db.repository.JobRepository`."""
 
@@ -35,6 +45,7 @@ class JobStore(Protocol):
     async def complete(self, job: ClaimedJob) -> bool: ...
     async def retry_later(self, job: ClaimedJob, delay_s: float, error: str) -> bool: ...
     async def mark_dead(self, job: ClaimedJob, error: str) -> bool: ...
+    async def release(self, job: ClaimedJob) -> bool: ...
 
 
 @dataclass(frozen=True)
@@ -44,6 +55,12 @@ class WorkerConfig:
     poll_s: float = 5.0  # fallback when a NOTIFY is missed
     retry_base_s: float = 5.0
     retry_cap_s: float = 300.0
+    # A longer retry-after kills the job: an answer hours late is no longer useful.
+    max_retry_after_s: float = 3600.0
+    # Spread of jobs waiting for the same retry-after, as a fraction of it (always later).
+    retry_after_jitter: float = 0.1
+    # Releasing a job at shutdown must not hold up the stop (compose kills after 30 s).
+    release_timeout_s: float = 3.0
 
     def __post_init__(self) -> None:
         if not 0 < self.heartbeat_s < self.lease_s:
@@ -82,7 +99,8 @@ class Worker:
         """Drain the queue, then sleep until `wake` is set (by NOTIFY) or `poll_s` elapses.
 
         Graceful stop: once `stop` is set, no new job is claimed and this returns after the
-        current job ends. Cancelling the task stops at once (the job's lease then expires)."""
+        current job ends. Cancelling the task stops at once: the current job is released back
+        to the queue without using up an attempt (if that fails, its lease expires)."""
         stop = stop or asyncio.Event()
         while not stop.is_set():
             wake.clear()  # before draining: a NOTIFY arriving meanwhile is not lost
@@ -125,6 +143,10 @@ class Worker:
         started = time.perf_counter()
         try:
             kept_lease = await self._run_with_heartbeat(job, handler)
+        except asyncio.CancelledError:
+            # Worker shutdown: not the job's fault, so it must not cost an attempt.
+            await self._release(job, log_ctx)
+            raise
         except PermanentJobError as exc:
             await self._mark_dead(job, _describe(exc), log_ctx)
             return
@@ -141,8 +163,9 @@ class Worker:
             logger.warning("%s: lease lost before completion (%d ms)", log_ctx, duration_ms)
 
     async def _fail(self, job: ClaimedJob, exc: Exception, log_ctx: str) -> None:
+        error = _describe(exc)
         if job.attempts >= job.max_attempts:
-            await self._mark_dead(job, _describe(exc), log_ctx)
+            await self._mark_dead(job, error, log_ctx)
             return
         delay = retry_delay_s(
             job.attempts,
@@ -150,7 +173,14 @@ class Worker:
             cap_s=self._config.retry_cap_s,
             rand=self._rand,
         )
-        error = _describe(exc)
+        if isinstance(exc, RetryLaterJobError):
+            if exc.delay_s > self._config.max_retry_after_s:
+                limit = self._config.max_retry_after_s
+                await self._mark_dead(job, f"{error} (retry-after over {limit:.0f} s)", log_ctx)
+                return
+            # Never before the retry-after: retrying earlier would fail again for nothing.
+            floor = exc.delay_s * (1 + self._config.retry_after_jitter * self._rand())
+            delay = max(delay, floor)
         if await self._store.retry_later(job, delay, error):
             logger.warning("%s: failed (%s), retry in %.1f s", log_ctx, error, delay)
         else:
@@ -162,6 +192,21 @@ class Worker:
             logger.error("%s: dead (%s)", log_ctx, reason)
         else:
             logger.warning("%s: lease lost before it could be marked dead (%s)", log_ctx, reason)
+
+    async def _release(self, job: ClaimedJob, log_ctx: str) -> None:
+        # Shielded so that a second cancel does not interrupt the update half-way, and bounded
+        # so that a slow database never holds up the stop. On failure, the lease still expires.
+        try:
+            released = await asyncio.wait_for(
+                asyncio.shield(self._store.release(job)), self._config.release_timeout_s
+            )
+        except Exception:
+            logger.exception("%s: release failed at shutdown, its lease will expire", log_ctx)
+            return
+        if released:
+            logger.info("%s: released at shutdown, back in the queue", log_ctx)
+        else:
+            logger.warning("%s: lease lost before it could be released", log_ctx)
 
     async def _run_with_heartbeat(self, job: ClaimedJob, handler: Handler) -> bool:
         """Run the handler while renewing the lease. Returns False (handler cancelled) when the

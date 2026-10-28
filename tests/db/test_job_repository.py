@@ -89,6 +89,7 @@ async def test_expired_lease_is_reclaimed_and_old_token_fenced(pool: Pool) -> No
     assert not await repo.complete(stale)
     assert not await repo.retry_later(stale, 0, "late")
     assert not await repo.mark_dead(stale, "late")
+    assert not await repo.release(stale)
     assert await repo.complete(fresh)
 
 
@@ -110,6 +111,32 @@ async def test_dead_job_is_never_claimed(pool: Pool, conn: AsyncConnection[Tuple
     assert await repo.mark_dead(job, "PermanentJobError: bad input")
     assert await status_of(conn, job.id) == "dead"
     assert await repo.claim(60) is None
+
+
+async def test_release_requeues_at_once_and_returns_the_attempt(
+    pool: Pool, conn: AsyncConnection[TupleRow]
+) -> None:
+    repo = JobRepository(pool)
+    await repo.enqueue("echo", {})
+    job = await repo.claim(60)
+    assert job is not None and job.attempts == 1
+    assert await repo.release(job)
+    assert await status_of(conn, job.id) == "queued"
+    again = await repo.claim(60)  # no lease to wait for
+    assert again is not None and again.id == job.id
+    assert again.attempts == 1  # the shutdown did not cost an attempt
+    assert not await repo.release(job)  # old token: fenced
+
+
+async def test_release_keeps_the_job_place_in_line(pool: Pool) -> None:
+    repo = JobRepository(pool)
+    first_id = await repo.enqueue("echo", {})
+    first = await repo.claim(60)
+    assert first is not None
+    await repo.enqueue("echo", {})
+    assert await repo.release(first)
+    again = await repo.claim(60)
+    assert again is not None and again.id == first_id  # not behind the newer job
 
 
 async def test_enqueue_notifies_listeners(pool: Pool, database_url: str) -> None:

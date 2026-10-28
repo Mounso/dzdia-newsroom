@@ -31,7 +31,14 @@ class InboundMessage(BaseModel):
 
 
 class ChannelError(Exception):
-    """Sending failed but may succeed later (network error, rate limit, server error)."""
+    """Sending failed but may succeed later (network error, rate limit, server error).
+
+    `retry_after_s` is the minimum wait the platform asked for (rate limit), when it gave one.
+    """
+
+    def __init__(self, message: str, *, retry_after_s: float | None = None) -> None:
+        super().__init__(message)
+        self.retry_after_s = retry_after_s
 
 
 class PermanentChannelError(ChannelError):

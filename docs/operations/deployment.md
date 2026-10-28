@@ -113,4 +113,4 @@ git pull
 docker compose --profile prod up -d --build
 ```
 
-Compose rebuilds the image, runs `migrate` again (already-applied migrations are skipped, see `schema_migrations`), then recreates `api` and `worker`. On stop, the worker finishes its current job for up to 25 seconds (compose `stop_grace_period` is 30 seconds); a job cancelled after that is picked up again once its 60-second lease expires. See the [runbook](runbook.md#worker-graceful-stop).
+Compose rebuilds the image, runs `migrate` again (already-applied migrations are skipped, see `schema_migrations`), then recreates `api` and `worker`. On stop, the worker finishes its current job for up to 25 seconds (compose `stop_grace_period` is 30 seconds); a job cancelled after that is released back to the queue without losing an attempt, and the new worker takes it over. See the [runbook](runbook.md#worker-graceful-stop).

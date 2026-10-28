@@ -25,13 +25,14 @@ stateDiagram-v2
     running --> running: heartbeat extends the lease
     running --> done: complete
     running --> queued: transient error, attempts < max (run_after = now + backoff)
+    running --> queued: released at shutdown (attempts - 1, run_after unchanged)
     running --> dead: permanent error, or last attempt failed, or no handler
     running --> running: lease expired, reclaimed by another worker (attempts + 1)
     done --> [*]
     dead --> [*]
 ```
 
-`attempts` is incremented **at claim time**, not on failure. A job that crashes its worker (or is cancelled at shutdown) therefore still consumes attempts, and cannot loop forever. When a job is reclaimed after its last attempt (`attempts > max_attempts`), the worker marks it `dead` without running it.
+`attempts` is incremented **at claim time**, not on failure. A job that crashes its worker therefore still consumes attempts, and cannot loop forever. The one exception is a clean shutdown: the worker releases the job and gives the attempt back (see [Graceful shutdown](#graceful-shutdown)). When a job is reclaimed after its last attempt (`attempts > max_attempts`), the worker marks it `dead` without running it.
 
 ## Claiming a job
 
@@ -65,10 +66,13 @@ RETURNING id, kind, payload, attempts, max_attempts, claim_token
 | `heartbeat_s` | 20 s | Renewal period while the handler runs; must be shorter than `lease_s` (two beats can be missed). |
 | `poll_s` | 5 s | Fallback wake-up period when no `NOTIFY` arrives. |
 | `retry_base_s`, `retry_cap_s` | 5 s, 300 s | Backoff parameters. |
+| `max_retry_after_s` | 3600 s | A longer retry-after kills the job: an answer hours late is no longer useful. |
+| `retry_after_jitter` | 0.1 | Extra wait after a retry-after, as a fraction of it, drawn at random. |
+| `release_timeout_s` | 3 s | Upper bound on releasing the current job at shutdown. |
 
 The handler runs in its own task. The worker waits for it in slices of `heartbeat_s` and extends the lease between slices. If the extension fails (another worker reclaimed the job), the handler is cancelled and its result discarded.
 
-The lease alone is not enough: a worker paused by a long GC, a network partition or a suspended VM can wake up after its lease expired and another worker took over. The **claim token** fences it out: every `UPDATE` after the claim includes `WHERE id = … AND claim_token = … AND status = 'running'`, so the stale worker's `complete`, `retry_later` or `mark_dead` matches no row and returns `False`.
+The lease alone is not enough: a worker paused by a long GC, a network partition or a suspended VM can wake up after its lease expired and another worker took over. The **claim token** fences it out: every `UPDATE` after the claim includes `WHERE id = … AND claim_token = … AND status = 'running'`, so the stale worker's `complete`, `retry_later`, `mark_dead` or `release` matches no row and returns `False`.
 
 ```mermaid
 sequenceDiagram
@@ -99,27 +103,40 @@ sequenceDiagram
 | Raised by the handler | Outcome |
 |---|---|
 | `PermanentJobError` (invalid payload, request rejected by the platform) | `dead` immediately, no retry. |
+| `RetryLaterJobError(delay_s)` (rate limit with a retry-after), `attempts < max_attempts` | `queued` again, never before `delay_s` (see below). |
+| `RetryLaterJobError` with `delay_s` over `max_retry_after_s` | `dead`. |
 | Any other exception, `attempts < max_attempts` | `queued` again, `run_after = now() + delay`. |
 | Any other exception on the last attempt | `dead`, with the error in `last_error`. |
 | Unknown `kind` | `dead`. |
 
 The delay uses **full jitter**: `uniform(0, min(cap, base * 2^(attempts - 1)))`. Jobs that fail together during a provider outage come back spread out instead of in a synchronized burst.
 
-The Telegram client adds a second, inner retry layer for short failures (network errors, 5xx, 429 with `retry_after` up to 30 s). Longer failures are raised as `ChannelError` and left to the queue; rejections (other 4xx) become `PermanentChannelError`, which the handler turns into `PermanentJobError`.
+A `RetryLaterJobError` sets a floor on that delay: `max(backoff, delay_s * (1 + 0.1 * uniform(0, 1)))`. Retrying inside a rate-limit window would fail again and burn an attempt for nothing. The extra 0 to 10 % spreads the jobs that hit the same 429, so they do not all come back at the same second. The attempt still counts: once the delay is respected, the next attempt almost always succeeds, and a job that keeps hitting rate limits still ends.
+
+The Telegram client adds a second, inner retry layer for short failures (network errors, 5xx, 429 with `retry_after` up to 30 s). Longer failures are raised as `ChannelError` and left to the queue. Handlers translate channel errors into the queue's terms, so the queue never depends on a channel:
+
+- a `ChannelError` with `retry_after_s` (a 429 over 30 s) becomes `RetryLaterJobError`;
+- a rejection (other 4xx), raised as `PermanentChannelError`, becomes `PermanentJobError`;
+- any other `ChannelError` is left as is, so the queue's own backoff applies.
 
 `last_error` stores `ExceptionType: message`, truncated to 2000 characters. Errors built from user input (for example a pydantic validation error on the payload) are reduced to a count, so message text never lands in the table.
 
 ## Graceful shutdown
 
-On `SIGTERM` (`docker compose stop`) or `SIGINT`, the worker stops claiming, lets the current job finish for up to 25 s, then cancels it. Compose waits 30 s (`stop_grace_period`) before `SIGKILL`. A cancelled job keeps status `running` until its lease expires (at most 60 s), then another worker reclaims it.
+On `SIGTERM` (`docker compose stop`) or `SIGINT`, the worker stops claiming, lets the current job finish for up to 25 s, then cancels it. Compose waits 30 s (`stop_grace_period`) before `SIGKILL`.
+
+A cancelled job is **released**: a fenced `UPDATE` sets it back to `queued`, gives back the attempt taken by its claim (`attempts - 1`) and clears the token and the lease. `run_after` is unchanged, so the job keeps its place in line, and the next worker takes it at once. A shutdown is not the job's fault, so it must not cost an attempt: otherwise two deployments during a long job could bury it.
+
+- The release runs under `asyncio.shield`: a second cancel (Ctrl+C twice, the caller's own cleanup) cannot interrupt the update half-way.
+- It is bounded by `release_timeout_s` (3 s), so a slow database never holds up the stop. 25 s plus 3 s stays under compose's 30 s.
+- If the release fails, or after a `SIGKILL`, the lease is the safety net: the job is reclaimed once it expires, and that claim counts as an attempt.
+- A job whose handler already had its side effect (message sent) runs again: this is the at-least-once delivery described above.
 
 ## Known limitations
 
 Tracked in the [design review](../reviews/2026-10-28-design-review.md):
 
 - One job at a time per worker process; long LLM jobs will need concurrent slots (R6).
-- A long Telegram `retry_after` is not carried to the queue's backoff, so a rate-limited job can exhaust its attempts (B1).
-- A job cancelled at shutdown consumes an attempt and waits for its lease to expire (R1).
 - No retention: `done` jobs, with message text, stay forever (R4).
 - A `dead` job notifies nobody (R5).
 

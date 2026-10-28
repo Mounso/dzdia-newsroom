@@ -11,7 +11,7 @@ from dzdia_newsroom.channels.base import (
 from dzdia_newsroom.channels.telegram import parse_update
 from dzdia_newsroom.db.models import ClaimedJob
 from dzdia_newsroom.worker.handlers import ACK_TEXT, build_handlers
-from dzdia_newsroom.worker.queue import PermanentJobError
+from dzdia_newsroom.worker.queue import PermanentJobError, RetryLaterJobError
 from tests.telegram_updates import make_update
 
 
@@ -66,3 +66,10 @@ async def test_transient_send_failure_is_left_to_the_queue_retries() -> None:
     with pytest.raises(ChannelError) as raised:
         await build_handlers(channel)[INBOUND_MESSAGE_KIND](inbound_job())
     assert not isinstance(raised.value, PermanentJobError)
+
+
+async def test_rate_limit_is_passed_to_the_queue_as_a_minimum_delay() -> None:
+    channel = FakeChannel(error=ChannelError("sendMessage: rate limited", retry_after_s=120))
+    with pytest.raises(RetryLaterJobError) as raised:
+        await build_handlers(channel)[INBOUND_MESSAGE_KIND](inbound_job())
+    assert raised.value.delay_s == 120

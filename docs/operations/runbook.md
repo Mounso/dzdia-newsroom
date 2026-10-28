@@ -175,9 +175,10 @@ On `SIGTERM` (`docker compose stop`, `up -d` after a rebuild) or `SIGINT`:
 
 1. The worker stops claiming new jobs.
 2. The current job gets up to 25 seconds to finish (`SHUTDOWN_GRACE_S`). Compose waits 30 seconds (`stop_grace_period`) before `SIGKILL`.
-3. A job still running after 25 seconds is cancelled. It stays `running` until its 60-second lease expires, then the next claim takes it over. That claim counts as a new attempt.
+3. A job still running after 25 seconds is cancelled and released: it goes back to `queued` at once, and the attempt it was using is given back.
+4. If the release fails (database unreachable, or more than 3 seconds), the job stays `running` until its 60-second lease expires, then the next claim takes it over. That claim counts as a new attempt.
 
-The worker logs `stop requested, finishing the current job`, then `worker stopped`. On Windows outside Docker, signal handlers are not available: Ctrl+C cancels at once, without the grace period.
+The worker logs `stop requested, finishing the current job`, then `worker stopped`. A cancelled job adds `released at shutdown, back in the queue`, or `release failed at shutdown, its lease will expire` with a stack trace. On Windows outside Docker, signal handlers are not available: Ctrl+C cancels at once, without the grace period.
 
 ## Backups and restore
 

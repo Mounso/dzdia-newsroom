@@ -89,8 +89,9 @@ class TelegramClient:
     """The few Bot API methods we use, with bounded retries.
 
     Short failures are retried here (network errors, 5xx, 429 with a short `retry_after`).
-    Longer ones raise `ChannelError` so the job queue retries the whole job later; rejected
-    requests (other 4xx) raise `PermanentChannelError`.
+    Longer ones raise `ChannelError` so the job queue retries the whole job later; a 429 error
+    carries its `retry_after_s`, which the queue must wait at least. Rejected requests (other
+    4xx) raise `PermanentChannelError`.
     """
 
     def __init__(
@@ -160,7 +161,9 @@ class TelegramClient:
                 description = self._redact(str(body.get("description", "")))[:300]
                 if status == 429:
                     delay = _retry_after_s(body)
-                    error = ChannelError(f"{method}: rate limited for {delay:.0f} s")
+                    error = ChannelError(
+                        f"{method}: rate limited for {delay:.0f} s", retry_after_s=delay
+                    )
                     if delay > self._max_wait_s:
                         raise error  # too long to hold the worker: let the queue retry later
                 elif status >= 500:

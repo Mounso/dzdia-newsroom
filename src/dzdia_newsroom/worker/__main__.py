@@ -1,8 +1,9 @@
 """Run the worker: `python -m dzdia_newsroom.worker`.
 
 On SIGTERM (`docker compose stop`) or SIGINT, the worker stops claiming jobs and lets the
-current one finish for up to `SHUTDOWN_GRACE_S`, then cancels it; a cancelled job's lease
-expires and another worker takes it over.
+current one finish for up to `SHUTDOWN_GRACE_S`, then cancels it. A cancelled job is released
+back to the queue without using up an attempt, so another worker takes it over at once (if the
+release fails, its lease expires instead).
 """
 
 import asyncio
@@ -23,7 +24,8 @@ from dzdia_newsroom.worker.queue import Worker, listen_for_jobs
 
 logger = logging.getLogger("dzdia_newsroom.worker")  # not __name__, which is "__main__"
 
-# Keep below compose's `stop_grace_period` (30 s), after which Docker sends SIGKILL.
+# Plus the release timeout (3 s), keep below compose's `stop_grace_period` (30 s), after which
+# Docker sends SIGKILL.
 SHUTDOWN_GRACE_S = 25.0
 TELEGRAM_TIMEOUT_S = 15.0
 
@@ -56,7 +58,7 @@ async def run() -> None:
             try:
                 await asyncio.wait_for(working, timeout=SHUTDOWN_GRACE_S)  # cancels on timeout
             except TimeoutError:
-                logger.warning("grace period over: current job cancelled, its lease will expire")
+                logger.warning("grace period over: current job cancelled")
         finally:
             for task in (listener, working, stopping):
                 task.cancel()

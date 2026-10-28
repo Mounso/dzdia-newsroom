@@ -20,7 +20,7 @@ Status: **Fixed** (with the change that fixed it), **Open**, or **Planned** (sch
 
 | Id | Severity | Finding | Status |
 |---|---|---|---|
-| B1 | Medium | A long Telegram 429 loses the message (see below). | Open |
+| B1 | Medium | A long Telegram 429 loses the message (see below). | Fixed |
 | B2 | Low | `python -m dzdia_newsroom.db.migrate` crashed on Windows (`ProactorEventLoop`) and did not use the JSON log setup. | Fixed |
 | B3 | Low | `CREATE TABLE IF NOT EXISTS schema_migrations` ran before the advisory lock; two concurrent runners could collide on `pg_type`. | Fixed |
 | B4 | Low | The worker ignored the result of `retry_later` and `mark_dead`, and logged "retry in N s" or "dead" even when its lease was lost and the row unchanged. | Fixed |
@@ -33,7 +33,9 @@ Status: **Fixed** (with the change that fixed it), **Open**, or **Planned** (sch
 - **Where:** [`channels/telegram.py`](../../src/dzdia_newsroom/channels/telegram.py) (`_call`, 429 branch) and [`worker/queue.py`](../../src/dzdia_newsroom/worker/queue.py) (`_fail`).
 - **What happens:** when `retry_after` exceeds 30 s, the client raises a `ChannelError` that does not carry the delay. The queue then applies its own backoff: 0 to 5 s after the first failure, 0 to 10 s after the second. All three attempts fall inside the rate-limit window and the job goes `dead`; the journalist never gets an answer.
 - **Same family:** the Gemini client of the eval harness ignores the `retryDelay` of 429 responses.
-- **Fix direction:** errors carry a minimum delay (for example `ChannelError.retry_after_s`), and the worker waits `max(backoff, retry_after)`. Options will be compared before implementation.
+- **Fix (option A of three, chosen by Abdou):** `ChannelError` carries `retry_after_s`. The handler translates it into a new queue exception, `RetryLaterJobError(delay_s)`, the same way it already turns `PermanentChannelError` into `PermanentJobError`, so the queue still knows nothing about channels. The worker waits `max(backoff, delay_s * (1 + 0.1 * rand))`. The attempt still counts, and a retry-after over one hour (`max_retry_after_s`) kills the job. Covered by tests in `test_queue.py`, `test_handlers.py` and `test_telegram_client.py`.
+- **Options set aside:** (B) a shared error taxonomy in a neutral `errors.py` module, read by the worker without translation; worth revisiting with the LLM client (R8) if translations multiply. (C) A "snooze" that does not consume an attempt, which needs a deadline to avoid endless loops.
+- **Still open:** the Gemini client's `retryDelay` (R8).
 
 ### B2, B3, B4 — fixed
 
@@ -64,7 +66,7 @@ Status: **Fixed** (with the change that fixed it), **Open**, or **Planned** (sch
 
 | Id | Topic | Finding | Proposal | Priority | Status |
 |---|---|---|---|---|---|
-| R1 | Worker shutdown | A job cancelled after the 25 s grace period stays `running` until its lease expires (60 s) and consumes an attempt. Two deployments during a long job can bury it. | Release the job on cancellation: back to `queued`, `attempts - 1`, token cleared. | Medium | Open |
+| R1 | Worker shutdown | A job cancelled after the 25 s grace period stayed `running` until its lease expired (60 s) and consumed an attempt. Two deployments during a long job could bury it. | Fenced `JobRepository.release()`: back to `queued`, `attempts - 1`, token cleared, `run_after` unchanged; called on cancellation, shielded and bounded to 3 s. Option A of three (the others: only cut the lease short, or lengthen the grace period). | Medium | Fixed |
 | R2 | Connection pool | Without `check=`, the first request after a Postgres restart used a dead pooled connection. | `check=AsyncConnectionPool.check_connection`. | Low | Fixed |
 | R3 | `LISTEN` connection | No TCP keepalive: a half-open connection blocks `notifies()` silently; polling (5 s) compensates. | `keepalives*` parameters in the connection string. | Low | Open |
 | R4 | `jobs` growth | No purge; the table keeps message text and the raw update forever. | Scheduled purge of `done` jobs after N days, keeping at least 24 h for Telegram deduplication. ADR needed. | Medium | Planned |
@@ -116,12 +118,12 @@ Strengths worth keeping: constant-time secret comparison; fail-closed allowlist;
 ## 5. Tests
 
 - **Strong functional coverage:** every queue guarantee has a test (fencing, expired lease, concurrent claims, graceful stop, notification), as do the webhook (status codes, deduplication) and the Telegram client (short and long 429, 5xx, network errors, token redaction).
-- **Gaps:** no coverage measurement in CI (`pytest-cov`); no test for B1 (long 429 followed by queue retries); no test that re-extracts an already labeled run (B5).
+- **Gaps:** no coverage measurement in CI (`pytest-cov`); no test that re-extracts an already labeled run (B5).
 
 ## 6. Remediation plan
 
 1. ~~**Quick fixes** (no design choice): B2, B3, B4, R2.~~ Done on 2026-10-28 (commit `dbd3e51`).
-2. **B1 and R1:** retries guided by `retry_after`, and releasing jobs on shutdown. Options to be compared first.
+2. ~~**B1 and R1:** retries guided by `retry_after`, and releasing jobs on shutdown.~~ Done on 2026-10-28 (option A for both).
 3. **Evals:** B5, B6 and the extraction timestamp, before running `extract` again.
 4. **CI and supply chain:** S1, S2 and coverage measurement.
 5. **Week 2 (ADRs):** A1 to A5, R4, R5, R6, R8, R10.
