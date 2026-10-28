@@ -62,13 +62,18 @@ Three boundaries matter:
 | Container escape impact | Runtime image without build tools, running as non-root user `app` (uid 10001). | `Dockerfile` |
 | Oversized or abusive requests | Caddy refuses bodies above 1 MB; interactive API docs and OpenAPI schema are disabled. | `Caddyfile`, `api/app.py` |
 | Markup injection from model output (v1 bug #7) | Messages are sent without `parse_mode`: text is never interpreted as Markdown or HTML. | `channels/telegram.py` |
+| SSH compromise of the VM | ed25519 keys only, no password, no root login, `AllowUsers ubuntu deploy`; automatic security updates with reboot. Port 22 stays public (accepted risk, [ADR-0007](../adr/0007-production-host-on-oracle-cloud.md)). | `deploy/bootstrap.sh` |
+| Internal ports reachable from the Internet | Two firewall layers (Oracle security list, host `iptables`: 22, 80, 443). Docker-published ports skip the host firewall, so `api` and `postgres` bind to `127.0.0.1`, enforced by a guard test. | `docker-compose.yml`, `tests/test_deploy_guards.py` |
+| Data loss (host failure, mistake, attacker on the VM) | Daily `pg_dump`, checked by a restore before upload, stored off the VM in an Object Storage bucket the VM can only add to (no overwrite or delete, 7-day retention lock). Monthly restore drill from the workstation. | `deploy/backup.sh`, [runbook](../operations/runbook.md#backups-and-restore) |
+| Backup disclosure | Encrypted with `age` on the VM; only the public key is there, the private key stays offline. | `deploy/backup.sh` |
+| Theft of storage credentials | None stored: the VM authenticates as an instance principal (dynamic group), with an add-only policy on one bucket. | Oracle IAM, compose `rclone` |
 | Prompt injection from external content (planned) | Delimit untrusted content; injection detection is only a logged signal; the real control is that no model reading untrusted content can call a write tool, and every write requires a persisted `APPROVED` state. | Planned: `guardrails/`, `domain/workflow.py` |
 | SSRF through user-supplied links (planned) | Resolve DNS, refuse private, loopback and link-local addresses (including `169.254.169.254`), limit size, content type, redirects and time. | Planned: `guardrails/ssrf.py` |
 | Over-privileged CMS account (planned) | Dedicated WordPress user with the Contributor role, which cannot publish; `status="draft"` forced in code as a second barrier. | Planned: `tools/wordpress.py` |
 
 ## Secrets handling
 
-- Secrets live in `.env` on the host, outside Git (`.gitignore`) and outside images (`.dockerignore`).
+- Secrets live in `.env` on the host, outside Git (`.gitignore`) and outside images (`.dockerignore`). The production `.env`, the `age` private key and the `ubuntu` console password are also kept in Abdou's password manager; the private key is never on the VM.
 - In code, secrets are `pydantic.SecretStr`: they are not printed in `repr` or validation errors, and are unwrapped only where used.
 - Which service receives which variable is listed in [configuration](../operations/configuration.md).
 - Rotation procedures for the webhook secret and the bot token are in the [runbook](../operations/runbook.md).
@@ -77,12 +82,14 @@ Three boundaries matter:
 
 - **Collected:** message text and metadata from allowlisted journalists, plus the full Telegram update (`raw`), which includes profile fields such as first name and username.
 - **Stored:** in the `jobs` table, in the `payload` column. There is currently no retention limit (gap R4/S3).
+- **Backed up:** encrypted dumps of the whole database stay in Object Storage for up to 29 days (`weekly/`). Data deleted from the database therefore survives in backups for up to 29 days; the future retention policy (R4/S3) must state it.
 - **Sent to third parties (planned):** source material and prompts to the LLM provider. Whether a free tier allows training on submitted data must be checked per provider and region before production use, as required by the product spec.
 - **Planned:** audio and video files deleted after transcription; an `audit_logs` table for tool calls (tool, arguments, user, result, cost).
 
 ## Supply chain
 
 - Python packages are locked with hashes (`uv.lock`); images are pinned by tag and digest; GitHub Actions by commit SHA. Dependabot proposes updates weekly, and a guard test fails on any unpinned reference.
+- On the VM, Docker comes from Docker's apt repository, whose signing key fingerprint `bootstrap.sh` checks before trusting it.
 - The CI audits every locked package for known advisories (`pip-audit`, also weekly), builds the image for amd64 and arm64, and runs with a read-only token.
 - Not covered yet: scanning the OS packages of the image (Trivy or similar), and signing or attesting images (none are published).
 

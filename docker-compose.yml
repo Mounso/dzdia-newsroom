@@ -1,6 +1,7 @@
 # Services: ADR-004. Image, profiles, migrations and secrets: ADR-006.
 #   dev:  docker compose --profile dev up -d --build    (+ cloudflared tunnel to the API)
-#   prod: docker compose --profile prod up -d --build   (+ caddy on ports 80 and 443)
+#   prod: deploy/deploy.sh <ref> on the VM (ADR-0007), which builds and runs the `prod` profile
+#         (+ caddy on ports 80 and 443)
 # `.env` is only used for interpolation: each service lists the variables it receives, so the
 # API never gets the bot token (ADR-005).
 
@@ -124,6 +125,22 @@ services:
     depends_on:
       api:
         condition: service_healthy
+    logging: *logging
+
+  # Ops only (ADR-0007): deploy/backup.sh streams encrypted dumps to Oracle Object Storage through
+  # it. The VM authenticates as an instance principal, so no credential is stored anywhere; its
+  # policy only lets it add objects to the bucket.
+  rclone:
+    image: rclone/rclone:1.75.2@sha256:2687085f718d3c628f7fdfb77c52a1d344332aed543110bb88088f2c70d43eb5
+    profiles: ["ops"]
+    restart: "no"
+    environment:
+      RCLONE_CONFIG_OOS_TYPE: oracleobjectstorage
+      RCLONE_CONFIG_OOS_PROVIDER: instance_principal_auth
+      RCLONE_CONFIG_OOS_NAMESPACE: ${OCI_NAMESPACE:-}
+      RCLONE_CONFIG_OOS_COMPARTMENT: ${OCI_COMPARTMENT_OCID:-}
+      RCLONE_CONFIG_OOS_REGION: ${OCI_REGION:-}
+      RCLONE_OOS_NO_CHECK_BUCKET: "true"  # the policy does not allow creating buckets
     logging: *logging
 
 volumes:

@@ -3,7 +3,7 @@
 - **Status:** Accepted (except the HTTPS hostname, to be confirmed)
 - **Date:** 2026-10-27
 - **Deciders:** Abdou (author), with Claude as reviewer
-- **Related:** [ADR-0005](0005-telegram-ingress.md), [ADR-0006](0006-docker-image-and-compose.md) (both build on this decision)
+- **Related:** [ADR-0005](0005-telegram-ingress.md), [ADR-0006](0006-docker-image-and-compose.md) (both build on this decision), [ADR-0007](0007-production-host-on-oracle-cloud.md) (the production host, DuckDNS name and backups)
 
 ## Context
 

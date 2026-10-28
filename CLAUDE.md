@@ -10,6 +10,7 @@
 - Types & lint: `uv run mypy && uv run ruff check .`
 - Baseline v1 eval: `uv run python -m evals.baseline_v1 --help`
 - Local stack (Docker, reads `.env`): `docker compose --profile dev up -d --build` (prod: `--profile prod`)
+- Production VM (ADR-0007, as `deploy` on the VM): `deploy/deploy.sh origin/main` | `--rollback` | `--status`; scripts in `deploy/` must pass `shellcheck -x deploy/*.sh` (locally: `koalaman/shellcheck:stable` in Docker)
 - Register the webhook: `docker compose run --rm telegram-cli set-webhook --url https://<host>/webhooks/telegram` (dev host: `docker compose logs cloudflared`)
 
 # Architecture invariants

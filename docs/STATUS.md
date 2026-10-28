@@ -1,13 +1,16 @@
-# Statut — 2026-10-28 (fin de session : audit terminé côté code, prochaine étape le déploiement sur la VM)
+# Statut — 2026-10-28 (ADR-0007 accepté, scripts `deploy/` écrits, testés en local, commités et poussés ; premier passage sur la VM à faire)
 
 ## Pour reprendre dans une nouvelle session
-- **Première chose à faire : le déploiement sur la VM Oracle Ampere (ARM64).** C'est un nouveau module, donc d'abord **3 ou 4 questions d'architecture** à Abdou (chacune avec une recommandation), puis l'**ADR-0007** (`docs/adr/0007-<titre>.md`, en anglais, format MADR, ajouté à l'index `docs/adr/README.md`). Ne rien coder avant ses réponses. Questions à préparer :
-  - **sauvegardes :** `pg_dump` planifié (fréquence, chiffrement, destination hors de la VM, rétention) et un test de restauration ;
-  - **procédure de déploiement :** `git pull` puis `docker compose --profile prod up -d --build` à la main, ou un script versionné (vérifications, migration, rollback) ;
-  - **accès et pare-feu :** SSH par clé seule avec un utilisateur non-root, règles de sécurité Oracle et `ufw` (ports 22, 80 et 443 seulement), mises à jour automatiques de sécurité (`unattended-upgrades`) ;
-  - **DNS et HTTPS :** DuckDNS en attendant `bot.dzdia.com`, Caddy (Let's Encrypt), puis `set-webhook` avec le bot de prod.
+- **Première chose à faire : le premier passage sur la vraie VM**, avec Abdou. Tout est décrit dans `docs/operations/deployment.md` (section « First installation ») ; décisions dans `docs/adr/0007-production-host-on-oracle-cloud.md`. Ce sont **ses comptes et sa machine** : lui donner les étapes et les commandes, il les lance et colle les sorties.
+  1. **Console Oracle (Abdou) :** passer le compte en Pay As You Go avec une alerte de budget (sinon Oracle arrête l'instance « inactive ») ; créer la VM `VM.Standard.A1.Flex`, Ubuntu 24.04 aarch64, avec une **clé ed25519** (une clé RSA est refusée par `bootstrap.sh`) ; réserver l'IP publique ; security list 22/80/443 ; bucket `dzdia-backups` (rétention 7 jours, cycle de vie `daily/` et `predeploy/` 8 jours, `weekly/` 29 jours, et la politique `objectstorage-<région>`) ; groupe dynamique `dzdia-vm` et politique d'ajout seul (texte exact dans `deployment.md`) ; nom DuckDNS ; check healthchecks.io (optionnel) ; bot de prod chez BotFather.
+  2. **Poste d'Abdou :** `age-keygen -o dzdia-backup.key` (clé privée dans son gestionnaire de mots de passe et sur papier, jamais sur la VM).
+  3. **VM :** `sudo deploy/bootstrap.sh --dry-run`, puis sans `--dry-run` ; garder la session SSH ouverte et tester `ssh deploy@…` à côté ; `sudo passwd ubuntu` (mot de passe pour la console série seulement).
+  4. **`.env` de prod** (Abdou, en tant que `deploy`) : nouveaux secrets, `PUBLIC_HOST`, variables `BACKUP_*` et `OCI_*` ; une copie dans son gestionnaire de mots de passe.
+  5. `deploy/deploy.sh origin/main`, puis `set-webhook --drop-pending` avec le bot de prod, puis un message de test.
+  6. `sudo systemctl start dzdia-backup.service` et lire le journal. **Points à valider sur la VM** (non testables en local) : `rclone` avec l'instance principal et une politique sans `OBJECT_OVERWRITE` (si `rcat` demande un autre droit, l'ajouter sauf écrasement et suppression) ; l'origine Docker dans `unattended-upgrade --dry-run --debug` ; `sshd -t` et la reconnexion ; l'accès au service de métadonnées (169.254.169.254) depuis le conteneur `rclone`.
+  7. Premier exercice de restauration depuis le poste : `deploy/restore-drill.sh`.
 
-  Pré-requis côté Abdou : compte Oracle Cloud et VM créée, bot de prod (BotFather), `TELEGRAM_BOT_TOKEN`, `TELEGRAM_WEBHOOK_SECRET`. Ce sont des actions sur ses comptes : lui donner les commandes, il les lance.
+  Ensuite : mettre à jour la doc avec ce qui a changé sur la VM, ajouter une ligne « validé sur la VM » à l'ADR-0007 si besoin (les métadonnées seulement), et cocher dans la fiche.
 - **À surveiller lundi :** les premières PR de Dependabot. Vérifier comment il regroupe les mises à jour de digest seules. Une PR qui touche l'image Postgres ou uv sera rouge tant que `ci.yml` n'est pas aligné à la main : c'est le test de garde qui fait son travail (`docs/development/conventions.md`, section « Dependencies and supply chain »).
 - **Reste ouvert dans l'audit** (petits points, à traiter quand ils deviennent utiles) : B7 (deux nombres collés lus comme un seul, avant `match`), R3, R7, R9, R11, S5, S6. Prévus plus tard : R4, R5, R6, R8, R10, S3, et A1 à A5 (semaine 2).
 - **Méthode de travail validée par Abdou** (à suivre à chaque étape) :
@@ -22,6 +25,7 @@
   - le hook de formatage retire un import ajouté avant son premier usage : ajouter l'usage d'abord, ou vérifier les imports après coup ;
   - `sleep` au premier plan est bloqué : lancer les commandes longues en arrière-plan et attendre la notification ;
   - un hook d'arrêt refuse de clore un tour qui n'a ni vérification (tests, typage) ni question de décision en attente : finir chaque tour par ruff, mypy et pytest, ou par un vrai choix pour Abdou (options en tableau) ;
+  - **scripts bash de `deploy/` :** pas de shellcheck sous Windows, le lancer en conteneur (`koalaman/shellcheck:stable`, commande dans `docs/development/testing.md`). Pour tester leur comportement : dans un conteneur `docker:cli` avec le socket Docker, sur une copie du dépôt dans un dossier dont le nom n'est **pas** `dzdia-newsroom` (sinon le projet compose et le volume `pgdata` d'Abdou seraient touchés) ; `deploy.sh` refuse root, donc créer un utilisateur dans le groupe du socket. Le pare-feu se teste dans `ubuntu:24.04` avec `--cap-add NET_ADMIN`. Pièges rencontrés : `age-keygen` refuse d'écraser un fichier ; un `| head` sur une commande avec `pipefail` renvoie 141 (SIGPIPE) ; un script sourcé par `<(…)` ne trouve plus `lib.sh` (son `BASH_SOURCE` est `/dev/fd`) ;
   - pour épingler une image ou une action (S1) : `docker buildx imagetools inspect <image:tag>` donne le digest d'index multi-architecture ; `git ls-remote https://github.com/<owner>/<repo> 'refs/tags/<tag>^{}'` donne le SHA de commit d'une action (sans `gh`) ; l'API `https://hub.docker.com/v2/repositories/<repo>/tags?name=<préfixe>` liste les tags. uv ne publie plus de tags versionnés `bookworm` : la procédure de test Docker utilise `ghcr.io/astral-sh/uv:0.13.6-python3.12-trixie-slim`.
 - **Sessions du 2026-10-28 :**
   - **Audit complet :** `docs/reviews/2026-10-28-design-review.md`. Chaque point a un identifiant et un statut. Corrigés : B1, B2, B3, B4, B5, B6, R1, R2, S1, S2. Ouverts : B7, R3, R7, R9, R11, S5, S6 ; S4 documenté ; prévus plus tard : R4, R5, R6, R8, R10, S3, et les questions d'architecture A1 à A5 (semaine 2).
@@ -37,9 +41,10 @@
   - `df96fa1` : B6 ;
   - `c578779` : S1, S2 et la couverture ;
   - `d2e1090` : une passation ;
-  - un dernier commit de passation, qui note l'accès de Claude à la CI.
+  - `01887cc` : une passation, qui note l'accès de Claude à la CI ;
+  - le dernier commit : l'ADR-0007 et les scripts `deploy/` (avec la doc, ce fichier compris).
 
-  L'arbre de travail est propre.
+  L'arbre de travail est propre ; tout est commité et poussé.
 
 - **Dépôt GitHub :** `origin` = https://github.com/Mounso/dzdia-newsroom. Tout est sur `main`. Le 2026-10-27, l'historique a été réécrit et poussé en force pour retirer les mentions de co-auteur : **aucun commit ne porte de ligne `Co-Authored-By`**, et il ne faut pas en ajouter.
 - **CI :** trois jobs, tous verts sur `c578779` et `d2e1090` (B6 compris) : `checks` 38 s, `audit` 11 s, `image` 2 min 08 (build arm64 sous QEMU compris). Le job `audit` tourne aussi chaque lundi. Dependabot a déjà fait un premier passage sur ses 4 écosystèmes, sans PR : tout était à jour.
@@ -49,7 +54,8 @@
   - `docs/fiche_de_suivi.md` : la fiche de préparation aux entretiens d'Abdou. **La mettre à jour à la fin de chaque étape**, en même temps que ce fichier ;
   - `evals/.data/` (ignoré par Git) : copies des articles, `runs.jsonl`, et dans `pre_b5/` les 20 extractions mises de côté par B5.
 - **Environnement :** Windows 11, avec WSL (Ubuntu) et Docker Desktop. Les tests Postgres tournent dans un conteneur Linux (commande dans `CLAUDE.md`), car psycopg en async ne fonctionne pas avec la boucle asyncio par défaut de Windows. **Docker Desktop doit être lancé** avant toute commande `docker`. S'il ne l'est pas, Claude peut le démarrer avec `Start-Process` sur `C:\Users\abdou\AppData\Local\Programs\DockerDesktop\Docker Desktop.exe`, puis attendre que `docker info` réponde.
-- **Vérifications (2026-10-28, après S1 et S2) :** ruff, `ruff format` et mypy strict ne signalent rien. Sous Windows, 147 tests passent et 13 sont sautés (les tests Postgres). Dans Docker, les 160 passent, couverture de branches 69 % (plancher 68). `actionlint` ne signale rien sur `ci.yml`. L'image se construit en amd64 (35 s) et en arm64 sous émulation (72 s), et le test de fumée passe sur les deux (Python 3.12.16, uid 10001). `pip-audit` : aucune vulnérabilité connue sur les 90 paquets verrouillés.
+- **Vérifications (2026-10-28, après l'ADR-0007) :** ruff, `ruff format`, mypy strict et shellcheck ne signalent rien ; sous Windows, 153 tests passent et 13 sont sautés ; les essais de `deploy/` dans des conteneurs Linux passent tous. La suite Postgres n'a pas été relancée (aucun code Python de `src/` n'a changé).
+- **Vérifications précédentes (2026-10-28, après S1 et S2) :** ruff, `ruff format` et mypy strict ne signalent rien. Sous Windows, 147 tests passent et 13 sont sautés (les tests Postgres). Dans Docker, les 160 passent, couverture de branches 69 % (plancher 68). `actionlint` ne signale rien sur `ci.yml`. L'image se construit en amd64 (35 s) et en arm64 sous émulation (72 s), et le test de fumée passe sur les deux (Python 3.12.16, uid 10001). `pip-audit` : aucune vulnérabilité connue sur les 90 paquets verrouillés.
 - **Attention, `uv run pytest --cov` sous Windows échoue au plancher** (environ 64 %, car les tests Postgres sont sautés) : c'est normal. `uv run pytest` sans `--cov` n'est pas concerné. Pour le vrai chiffre, ajouter `--cov` à la procédure Docker.
 - **`.env.example` est illisible pour Claude** (règle de `.claude/settings.json`). Abdou doit y ajouter lui-même les nouvelles variables (voir les étapes 8 et 9 ci-dessous).
 - **`.env` d'Abdou :** il contient un token de bot de dev (actif) et un token de bot de prod (en commentaire), `POSTGRES_PASSWORD`, `TELEGRAM_WEBHOOK_SECRET` et `TELEGRAM_ALLOWED_USER_IDS` (son identifiant Telegram : `5271201903`). Claude ne lit jamais `.env` ; pour vérifier une variable non secrète, utiliser `docker inspect` sur le conteneur concerné.
@@ -126,6 +132,12 @@
     - **options écartées :** S1-A (tags exacts sans digest), S1-C (Renovate), S2-A (build amd64 seul), S2-C (scan Trivy, à reconsidérer une fois la VM en service) ;
     - doc mise à jour : `docs/development/conventions.md` (nouvelle section « Dependencies and supply chain »), `testing.md` (CI et couverture), `security.md`, `deployment.md`, amendement en tête de l'ADR-0006, revue de conception (S1 et S2 `Fixed`, couverture), roadmap, et les commandes de test Docker dans `CLAUDE.md` ;
     - `.gitignore` ignore maintenant les fichiers de couverture.
+16. **Déploiement sur la VM : ADR-0007 et `deploy/`** (2026-10-28 ; Abdou a validé les 4 recommandations, puis l'option A pour le provisioning) :
+    - **ADR-0007** (`docs/adr/0007-production-host-on-oracle-cloud.md`, Accepted) : Ubuntu 24.04 sur A1.Flex, compte en Pay As You Go, IP réservée ; SSH public par clés ed25519 seules, utilisateurs `ubuntu` (sudo) et `deploy` (groupe `docker`) ; pare-feu Oracle + `iptables` de l'image (pas d'UFW) ; `unattended-upgrades` (sécurité + Docker, redémarrage à 04:00 UTC), Docker en `live-restore` ; `deploy.sh` avec rollback et règle expand/contract ; sauvegardes `pg_dump` + `age` + `rclone` vers Object Storage avec instance principal et politique d'ajout seul ; DuckDNS puis `bot.dzdia.com` ; S5 laissé ouvert ; provisioning par `bootstrap.sh` idempotent ;
+    - **`deploy/`** : `lib.sh` (helpers, `env_get` qui lit `.env` sans le sourcer, `restore_check`), `bootstrap.sh` (`--dry-run`), `deploy.sh` (`<ref>`, `--rollback`, `--status`, `--dry-run` ; historique dans `~/.local/state/dzdia-newsroom/deployments.tsv` ; garde les images des 3 derniers déploiements réussis), `backup.sh` (`daily|predeploy`, `--keep-local DIR`), `restore-drill.sh` (sur le poste), `systemd/dzdia-backup.{service,timer}` ;
+    - **compose** : nouveau service `rclone` (profil `ops`, image `rclone/rclone:1.75.2` épinglée par digest, sans identifiant) ;
+    - **tests** : `tests/test_deploy_guards.py` (5 tests : seul `caddy` publie hors de `127.0.0.1`, les services applicatifs utilisent `dzdia-newsroom:local`, scripts stricts, en LF et finissant par `main "$@"`), plus l'image `rclone` dans le test de garde de la chaîne d'approvisionnement ; `shellcheck -x deploy/*.sh` dans le job `checks` de la CI ; essais dans des conteneurs Linux (sauvegarde, restauration, mauvaise clé, refus de `deploy.sh`, cibles de rollback, pare-feu Oracle et sa deuxième passe sans effet) ;
+    - **doc** : `deployment.md` (installation, déploiement, rollback, sauvegardes, passage à `bot.dzdia.com`), `runbook.md` (sauvegardes, exercice mensuel, restauration, VM à reconstruire, déploiement raté, SSH perdu, pare-feu, mises à jour), `configuration.md` (6 variables), `security.md`, `conventions.md` (expand/contract, scripts shell), `testing.md`, roadmap, revue de conception, `README.md`, `CLAUDE.md`, liens des ADR 0004 et 0006.
 
 ## En pause : étape `extract`
 - **État :** 0/144. Les 20 extractions faites avec `gemini-2.5-flash` (les 124 autres avaient pris des 429 : le free tier est limité à 5 requêtes par minute et 20 par jour) n'avaient pas de date. Elles ont été déplacées dans `evals/.data/baseline_v1/pre_b5/` (local, rien de supprimé), et `extract` repartira de zéro. `match` n'est pas lancé.
@@ -145,13 +157,14 @@
    - un sous-domaine de dzdia.com pour le webhook (par exemple `bot.dzdia.com`) ;
    - l'identifiant du groupe Telegram de l'équipe ;
    - les identifiants Telegram des journalistes, pour la liste blanche.
-2. **Déploiement sur la VM Oracle Ampere (ARM64)** : questions d'architecture, ADR-0007, puis mise en place (voir en haut). Caddy et DuckDNS en attendant le sous-domaine.
+2. **Premier passage sur la VM Oracle Ampere (ARM64)** : voir en haut. Caddy et DuckDNS en attendant le sous-domaine.
 3. **Reprendre `extract` puis `match`** (choisir d'abord le modèle extracteur, voir « En pause » ; corriger B7 avant `match`), et inspecter la répartition trouvé / non trouvé par type. Ajuster `--name-threshold` si nécessaire.
 4. **Étiquetage :** `export-labels`, étiquetage S/C/N par Abdou dans Excel, puis `import-labels` et `report`. Commiter `labels.jsonl` et `report.md`.
 5. **Passe parallèle du LLM-juge** sur les mêmes éléments. Les verdicts sont stockés à part, pour la calibration en semaine 5.
 
 ## Petits points en suspens
 - **Le webhook du bot de dev pointe encore sur une URL trycloudflare morte**, car la pile de dev est arrêtée. Telegram garde les updates en attente (environ 24 h). Pour reprendre les tests en local : `docker compose --profile dev up -d --build`, lire la nouvelle URL dans `docker compose logs cloudflared`, puis relancer `set-webhook`. Le volume `pgdata` de dev contient le job de test (statut `done`).
-- **`.env.example`** : Abdou doit vérifier qu'il liste toutes les variables (`POSTGRES_PASSWORD`, `TELEGRAM_*`, `LOG_FORMAT`, `LOG_LEVEL`, `PUBLIC_HOST`, `API_PORT`, `POSTGRES_PORT`), car Claude ne peut pas le lire.
+- **`.env.example`** : Abdou doit vérifier qu'il liste toutes les variables (`POSTGRES_PASSWORD`, `TELEGRAM_*`, `LOG_FORMAT`, `LOG_LEVEL`, `PUBLIC_HOST`, `API_PORT`, `POSTGRES_PORT`, et depuis l'ADR-0007 `BACKUP_AGE_RECIPIENT`, `BACKUP_BUCKET`, `BACKUP_HEALTHCHECK_URL`, `OCI_NAMESPACE`, `OCI_COMPARTMENT_OCID`, `OCI_REGION`), car Claude ne peut pas le lire.
+- **S2-C (scan Trivy de l'image)** : à reconsidérer maintenant que la VM arrive.
 - **Avertissements de pytest, sans effet aujourd'hui :** `StarletteDeprecationWarning`, car `TestClient` utilise httpx ; `_UnionGenericAlias`, qui vient de google-genai.
 - **Image Docker de 401 Mo** (406 Mo avant S1) : les dépendances des évals (trafilatura, google-genai) y sont incluses. On les garde, car la v2 s'en servira dès la semaine 2.

@@ -48,6 +48,9 @@ jobs:
       - run: uv run ruff check .
       - run: uv run ruff format --check .
       - run: uv run mypy
+      - name: Shellcheck the deployment scripts
+        # Preinstalled on the runner image. -x follows `source deploy/lib.sh`.
+        run: shellcheck --version && shellcheck -x deploy/*.sh
       - run: uv run pytest -q --cov --cov-report=term
       - name: Coverage summary
         if: ${{ !cancelled() }}

@@ -17,7 +17,7 @@ Documentation of Dzdia Newsroom Engine, organized by what you want to do. Start 
 ## Run and operate it
 
 - [Configuration](operations/configuration.md): every environment variable, and which service receives which secret.
-- [Deployment](operations/deployment.md): local stack, production profile, upgrades.
+- [Deployment](operations/deployment.md): local stack; production VM installation, deployment, rollback and backups.
 - [Runbook](operations/runbook.md): logs, queue inspection, incidents, secret rotation.
 
 ## Develop it

@@ -25,6 +25,12 @@ This page lists every environment variable the system reads, which process reads
 | `PUBLIC_HOST` | compose (`caddy`, profile `prod`) | Yes in production | empty | Public host name Caddy serves and gets a Let's Encrypt certificate for, e.g. `bot.dzdia.com`. |
 | `API_PORT` | compose (`api` port mapping) | No | `8000` | Host port bound on `127.0.0.1` for the API. |
 | `POSTGRES_PORT` | compose (`postgres` port mapping) | No | `5432` | Host port bound on `127.0.0.1` for Postgres. |
+| `BACKUP_AGE_RECIPIENT` | `deploy/backup.sh` | Yes for backups | — | `age` public key (`age1...`) the dumps are encrypted to. Not a secret; the private key never goes on the VM ([ADR-0007](../adr/0007-production-host-on-oracle-cloud.md)). |
+| `BACKUP_BUCKET` | `deploy/backup.sh` | Yes for uploads | — | Name of the Object Storage bucket, e.g. `dzdia-backups`. |
+| `BACKUP_HEALTHCHECK_URL` | `deploy/backup.sh` | No | unset | healthchecks.io ping URL (`https://hc-ping.com/<uuid>`), pinged at the start, success or failure of daily runs. Treat it as a secret: anyone with it can send false pings. |
+| `OCI_NAMESPACE` | compose (`rclone`, profile `ops`) | Yes for uploads | — | Object Storage namespace of the tenancy (console: Tenancy details). |
+| `OCI_COMPARTMENT_OCID` | compose (`rclone`) | Yes for uploads | — | OCID of the compartment that holds the bucket. |
+| `OCI_REGION` | compose (`rclone`) | Yes for uploads | — | Region identifier, e.g. `eu-marseille-1`. |
 | `GEMINI_API_KEY` | eval harness (`Settings`) | Yes for `evals.baseline_v1` LLM steps | — | Google Gemini API key. Not passed to any compose service. |
 | `V1_MODEL` | eval harness (`Settings`) | No | `gemini-3.1-flash-lite-preview` | Model used to replay the legacy v1 prompts. |
 | `EXTRACTION_MODEL` | eval harness (`Settings`) | No | `gemini-2.5-flash` | Model used to extract critical elements. |
@@ -56,6 +62,9 @@ Least privilege ([ADR-0005](../adr/0005-telegram-ingress.md), [ADR-0006](../adr/
 | `telegram-cli` (profile `tools`) | — | yes | yes | — |
 | `caddy` (profile `prod`) | — | — | — | — |
 | `cloudflared` (profile `dev`) | — | — | — | — |
+| `rclone` (profile `ops`) | — | — | — | — |
+
+`rclone` receives only the `OCI_*` identifiers, no credential: it authenticates as the VM's instance principal. `deploy/backup.sh` reads `BACKUP_*` from `.env` itself (it parses the file, it never sources it).
 
 ```mermaid
 flowchart LR

@@ -182,4 +182,115 @@ The worker logs `stop requested, finishing the current job`, then `worker stoppe
 
 ## Backups and restore
 
-Planned (ADR-0007): `pg_dump` schedule, destination, retention and the restore procedure are not decided yet.
+How backups work is described in [deployment](deployment.md#backups) and [ADR-0007](../adr/0007-production-host-on-oracle-cloud.md). The production `.env` is **not** in the backups: keep a copy in the password manager, next to the `age` private key.
+
+### Check the last backups
+
+```bash
+systemctl list-timers dzdia-backup.timer          # last and next run
+journalctl -u dzdia-backup.service --since -2d    # "restore check passed", "uploaded daily/..."
+```
+
+healthchecks.io alerts when a run fails or does not happen. In the Oracle console, the bucket should hold 7 to 8 objects under `daily/` and up to 4 under `weekly/`.
+
+**A run failed:** read the journal. Common causes:
+
+- `restore check: the restored database differs from the live one`: a migration ran during the dump. Run the backup again.
+- an `rclone` error with `NotAuthorizedOrNotFound`: the dynamic group or its policy does not match (instance OCID, bucket name, compartment), or `OCI_*` is wrong in `.env`.
+- `set BACKUP_... in .env`: a variable is missing.
+
+### Take a backup by hand
+
+```bash
+sudo systemctl start dzdia-backup.service   # as ubuntu: same as the timer, with healthcheck pings
+deploy/backup.sh predeploy                  # as deploy: goes to predeploy/, no healthcheck ping
+```
+
+### Monthly restore drill (workstation)
+
+This proves the whole chain: upload, encryption and the private key. Run it on the workstation, where the private key is, never on the VM.
+
+1. In the Oracle console, download the latest object from `daily/`.
+2. Run, from the repository (WSL or Linux, with Docker and `age`):
+
+   ```bash
+   deploy/restore-drill.sh ~/Downloads/dzdia-<date>-daily.dump.age /path/to/dzdia-backup.key
+   ```
+
+3. The script restores into a throwaway Postgres and prints one line per table with its row count, plus the applied migrations. Check that they look right, and keep the encrypted file: it is the copy outside Oracle.
+
+### Restore production from a backup
+
+Plan for a few minutes of downtime. Telegram retries the webhook calls that fail meanwhile.
+
+1. On the workstation, decrypt the chosen backup, then copy it to the VM:
+
+   ```bash
+   age -d -i /path/to/dzdia-backup.key -o dzdia.dump dzdia-<date>-daily.dump.age
+   scp dzdia.dump deploy@<host>:
+   ```
+
+2. On the VM, as `deploy`, stop the writers, restore, and restart:
+
+   ```bash
+   cd dzdia-newsroom
+   docker compose stop api worker
+   docker compose exec -T postgres pg_restore -U dzdia -d dzdia --clean --if-exists --no-owner --exit-on-error < ~/dzdia.dump
+   docker compose --profile prod up -d
+   shred -u ~/dzdia.dump
+   ```
+
+3. Delete the plain dump on the workstation too.
+
+### Rebuild the VM from nothing
+
+Target: about one hour. Follow [first installation](deployment.md#first-installation) (new instance on the same reserved IP, `bootstrap.sh`, `.env` from the password manager, `deploy.sh origin/main`), then [restore production](#restore-production-from-a-backup). Update the dynamic group's matching rule with the new instance OCID.
+
+## A deployment failed
+
+**Symptoms:** `deploy.sh` stops with `docker compose up failed` (often a failed migration) or `https://<host>/health did not answer within 120s`.
+
+1. Look at the state and the logs:
+
+   ```bash
+   deploy/deploy.sh --status
+   docker compose logs --tail 100 migrate api caddy
+   ```
+
+2. If the cause is not obvious, return to the previous version at once, then investigate:
+
+   ```bash
+   deploy/deploy.sh --rollback
+   ```
+
+A failed `migrate` keeps `api` and `worker` on the previous containers, which compose did not recreate. Rollback does not revert the schema: migrations follow the expand/contract rule, so the previous code works with the new schema.
+
+## Locked out of SSH
+
+**Symptoms:** `Permission denied (publickey)` or a timeout on port 22.
+
+- Check the key you use: only ed25519 keys are accepted, and only for `ubuntu` and `deploy`.
+- A timeout means the security list or `iptables` drops port 22. Never use UFW on Oracle's images.
+- **Recovery:** Oracle console → the instance → *Console connection* → *Launch Cloud Shell connection* (serial console). Log in as `ubuntu` with its console password (set at installation; without one, edit the boot entry to get a root shell). Then fix `/etc/ssh/sshd_config.d/10-dzdia.conf` or `/etc/iptables/rules.v4` (`/etc/iptables/rules.v4.orig` is Oracle's original).
+
+## Host firewall
+
+Inspect the live rules, and check that ports 80 and 443 come before the final `REJECT`:
+
+```bash
+sudo iptables -S INPUT
+```
+
+To open another port, insert the live rule after the SSH rule and add the same line to `/etc/iptables/rules.v4`, as `bootstrap.sh` does. Never run `iptables-restore` (it flushes Docker's chains, so containers lose their network until Docker restarts) or `netfilter-persistent save` (it would write Docker's chains into the boot file).
+
+## Automatic updates and reboots
+
+`unattended-upgrades` installs security updates and Docker updates every day, and reboots at 04:00 UTC when a package requires it. The containers come back by themselves.
+
+```bash
+cat /var/run/reboot-required 2>/dev/null       # a reboot is pending
+less /var/log/unattended-upgrades/unattended-upgrades.log
+sudo unattended-upgrade --dry-run --debug 2>&1 | grep -i "allowed origins"
+```
+
+The last command must list the Docker origin. If it does not, check the `Origin` and `Label` of Docker's repository in `/var/lib/apt/lists/*docker*Release`.

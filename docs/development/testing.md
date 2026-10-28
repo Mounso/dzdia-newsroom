@@ -12,6 +12,7 @@ This page describes how the test suite is organized, how to run it (including th
 | `tests/evals/` | unit | Baseline harness: sampling, snapshots, runner, extraction, matcher, labeling, report, LLM retry |
 | `tests/test_config.py`, `tests/test_logging_setup.py` | unit | Settings parsing and validation; JSON log format |
 | `tests/test_supply_chain.py` | static | Every image and action is pinned; CI, `Dockerfile` and compose agree (see [conventions](conventions.md#dependencies-and-supply-chain)) |
+| `tests/test_deploy_guards.py` | static | Only `caddy` publishes ports outside `127.0.0.1`; app services run the `dzdia-newsroom:local` image that `deploy.sh` retags; deployment scripts are strict (`set -euo pipefail`), LF-only and call `main` on their last line ([ADR-0007](../adr/0007-production-host-on-oracle-cloud.md)) |
 | `tests/db/` | integration | Migrations, `JobRepository` against a real Postgres, end-to-end chain webhook -> `jobs` -> worker -> reply |
 
 Shared test doubles:
@@ -69,9 +70,25 @@ On Linux and macOS, start any Postgres 16 with pgvector and export `TEST_DATABAS
 
 | Job | Steps |
 |---|---|
-| `checks` | With a Postgres service (same image as compose) and `TEST_DATABASE_URL` set: `uv sync --frozen` (fails if `uv.lock` is out of date), `ruff check`, `ruff format --check`, `mypy`, then `pytest --cov`, integration tests included. Fails under the coverage floor; the coverage table is written to the job summary. |
+| `checks` | With a Postgres service (same image as compose) and `TEST_DATABASE_URL` set: `uv sync --frozen` (fails if `uv.lock` is out of date), `ruff check`, `ruff format --check`, `mypy`, `shellcheck -x deploy/*.sh` (preinstalled on the runner), then `pytest --cov`, integration tests included. Fails under the coverage floor; the coverage table is written to the job summary. |
 | `audit` | `pip-audit` on every group of `uv.lock` (see [conventions](conventions.md#dependencies-and-supply-chain)). |
 | `image` | Builds the image for `linux/amd64` and `linux/arm64` (QEMU emulation; the production VM is arm64) with the GitHub Actions cache, then loads the amd64 image and imports every entry point as the non-root user: the runtime venv has no dev dependencies, so a package that only the tests provided shows up here. Nothing is pushed. |
+
+### Deployment scripts
+
+The bash scripts in [`deploy/`](../../deploy/) are checked statically in the CI (shellcheck and the guard tests above). Locally, without a Windows shellcheck:
+
+```bash
+MSYS_NO_PATHCONV=1 docker run --rm -v "<repo>:/mnt:ro" -w /mnt koalaman/shellcheck:stable -x deploy/*.sh
+```
+
+Their behavior was tested on 2026-10-28 in Linux containers, not in the CI:
+
+- `backup.sh --keep-local` against a Postgres with the real migration, followed by `restore-drill.sh` with the right key (tables and counts restored) and with a wrong key (refused). The encrypted file contained no plain text;
+- `deploy.sh` as a non-root member of the Docker socket's group: refusal of root, of a ref outside `origin/main` and of a dirty checkout; `--dry-run` of a deployment; rollback targets through a history with failed and reverted entries;
+- `bootstrap.sh`'s firewall step in Ubuntu 24.04 with Oracle-shaped `iptables` rules: ports 443 and 80 inserted after SSH and before the `REJECT`, live and in `rules.v4`, a Docker chain left intact, and no change on a second run. Its SSH step refuses to proceed when no ed25519 key is authorized.
+
+Uploads to Object Storage, `sshd`, systemd and `unattended-upgrades` can only be tested on the VM.
 
 ### Coverage
 

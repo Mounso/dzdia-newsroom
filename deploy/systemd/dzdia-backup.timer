@@ -1,0 +1,12 @@
+# Installed by deploy/bootstrap.sh (ADR-0007). Daily at 03:00 UTC, before the 04:00 window for
+# automatic reboots; Persistent runs a missed backup at the next boot.
+[Unit]
+Description=Daily encrypted Postgres backup (ADR-0007)
+
+[Timer]
+OnCalendar=*-*-* 03:00:00 UTC
+RandomizedDelaySec=5min
+Persistent=true
+
+[Install]
+WantedBy=timers.target

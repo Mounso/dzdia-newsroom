@@ -60,6 +60,7 @@ Details: [getting started](docs/development/getting-started.md) and [deployment]
 src/dzdia_newsroom/   application: api/, channels/, db/, worker/, config, logging
 evals/                evaluation harnesses (baseline_v1) and committed datasets
 tests/                unit tests and Postgres integration tests
+deploy/               production VM: provisioning, deployment and rollback, encrypted backups
 docs/                 architecture, ADRs, operations, development, evals
 ```
 

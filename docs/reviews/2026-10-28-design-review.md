@@ -89,7 +89,7 @@ Status: **Fixed** (with the change that fixed it), **Open**, or **Planned** (sch
 | S2 | CI does not build the Docker image (a broken Dockerfile shows up only at deployment) and does not audit dependencies. | `docker build` step; `pip-audit` or `osv-scanner` on `uv.lock`. | Fixed |
 | S3 | The stored `raw` update contains personal data, kept indefinitely. | Minimize `raw` or purge it earlier; document retention (with R4). | Planned |
 | S4 | A `POSTGRES_PASSWORD` containing `@`, `/` or `:` breaks the `DATABASE_URL` built by compose. | Documented in the [configuration reference](../operations/configuration.md#generating-secrets). | Fixed (documented) |
-| S5 | The webhook accepts any source IP; the secret is the control. | Optional defense in depth: allow only Telegram's IP ranges in Caddy. | Open |
+| S5 | The webhook accepts any source IP; the secret is the control. | Optional defense in depth: allow only Telegram's IP ranges in Caddy. | Open (kept open by [ADR-0007](../adr/0007-production-host-on-oracle-cloud.md): a change of ranges would cut the bot off silently) |
 | S6 | Development tooling: the AI assistant's deny rule covers `Read(./.env)` but not shell commands such as `cat .env`. | Add matching `Bash(...)` deny rules (partial defense). | Open |
 
 ### S1 and S2 — fixed
@@ -138,4 +138,5 @@ Strengths worth keeping: constant-time secret comparison; fail-closed allowlist;
 2. ~~**B1 and R1:** retries guided by `retry_after`, and releasing jobs on shutdown.~~ Done on 2026-10-28 (option A for both).
 3. ~~**Evals:** B5 and the extraction timestamp, then B6, before running `extract` again.~~ Done on 2026-10-28 (option A for B5, option B for B6).
 4. ~~**CI and supply chain:** S1, S2 and coverage measurement.~~ Done on 2026-10-28 (option B for both).
-5. **Week 2 (ADRs):** A1 to A5, R4, R5, R6, R8, R10.
+5. **Deployment** (not a finding, the next module): decided in [ADR-0007](../adr/0007-production-host-on-oracle-cloud.md) on 2026-10-28 and scripted in `deploy/`. S2-C (Trivy) is to be reconsidered once the VM runs.
+6. **Week 2 (ADRs):** A1 to A5, R4, R5, R6, R8, R10.

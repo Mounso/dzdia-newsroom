@@ -65,7 +65,13 @@ A job whose kind has no handler is marked `dead` (`no handler for kind ...`).
 1. Create the next numbered file in [`src/dzdia_newsroom/db/migrations/`](../../src/dzdia_newsroom/db/migrations/), for example `0002_<description>.sql`. Files are applied in name order; the version recorded in `schema_migrations` is the file stem.
 2. Write plain SQL. Each file runs in its own transaction, under an advisory lock that serializes concurrent runners.
 3. **Never edit a migration that has been applied anywhere.** The runner skips known versions and does not compare contents, so an edit would silently diverge between databases. Write a new migration instead.
-4. Apply it with `uv run python -m dzdia_newsroom.db.migrate` (local), or let the compose `migrate` service run it at the next deployment. Integration tests apply all migrations to their throwaway schema automatically.
+4. **Expand/contract: the previous release must keep working on the new schema.** `deploy.sh --rollback` restores the previous code but never the previous schema ([ADR-0007](../adr/0007-production-host-on-oracle-cloud.md)). So:
+   - add before use: a new column is nullable or has a default, and the code that relies on it ships in the same or a later release;
+   - remove after disuse: drop or rename a column only in a release after the one that stopped reading it (a rename is an add, a copy, then a later drop);
+   - no `NOT NULL` on an existing column, type change or new constraint that the previous code would violate, in the same release as the code change.
+
+   Say in the pull request how the previous release behaves on the new schema.
+5. Apply it with `uv run python -m dzdia_newsroom.db.migrate` (local), or let the compose `migrate` service run it at the next deployment. Integration tests apply all migrations to their throwaway schema automatically.
 
 ## Adding an environment variable
 
@@ -91,6 +97,19 @@ Everything the build or the CI downloads is pinned, so that a build is reproduci
 - **Deliberate upgrades only** for Python (3.12, ignored by Dependabot beyond patches) and Postgres (`pg16-bookworm`: a major upgrade needs a dump and restore, and a new glibc can change collation order). Changing either means changing the guard test and following the migration procedure.
 - **Dependabot PRs:** one grouped PR per ecosystem for minor and patch updates, one PR per major. Read the changelog of majors; merge only when the CI is green.
 - **Vulnerability audit.** The `audit` CI job runs `pip-audit` on every group of `uv.lock` (exported with hashes, nothing resolved), on every push and every Monday. It fails on any known advisory. To accept one, add its id to [`.github/pip-audit-ignore.txt`](../../.github/pip-audit-ignore.txt) with the reason and a review date; prefer upgrading.
+
+## Shell scripts
+
+The deployment scripts in [`deploy/`](../../deploy/) are production code ([ADR-0007](../adr/0007-production-host-on-oracle-cloud.md)):
+
+- `#!/usr/bin/env bash` and `set -euo pipefail`; shared helpers in `deploy/lib.sh` (`log`, `die`, `run`, `env_get`, `compose`, `restore_check`).
+- All the logic in functions, and `main "$@"` as the **last line**: bash reads a script while running it, and `deploy.sh` checks out another commit, which rewrites the file under it.
+- Never call a function on the left of `&&` or `||` when it relies on `set -e`: bash disables errexit inside it. Write the calls on separate lines.
+- Every command that changes state goes through `run`, so `--dry-run` prints it instead. Read-only checks always run.
+- Read `.env` with `env_get`, never `source`: compose syntax is not bash, and sourcing would execute the file.
+- Idempotent provisioning: check the current state before changing it (`install_file` writes only on difference).
+- `shellcheck -x` clean (the CI fails otherwise); an exception needs a `# shellcheck disable=SCxxxx` comment with the reason.
+- LF line endings (`.gitattributes`) and the executable bit (`git add --chmod=+x` from Windows).
 
 ## Architecture decision records
 

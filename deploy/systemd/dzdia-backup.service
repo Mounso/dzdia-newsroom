@@ -1,0 +1,18 @@
+# Installed by deploy/bootstrap.sh (ADR-0007). Run by dzdia-backup.timer; by hand:
+#   sudo systemctl start dzdia-backup.service && journalctl -u dzdia-backup.service -e
+[Unit]
+Description=Encrypted Postgres backup to Oracle Object Storage (ADR-0007)
+Wants=network-online.target
+After=network-online.target docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+User=deploy
+Group=deploy
+WorkingDirectory=/home/deploy/dzdia-newsroom
+ExecStart=/home/deploy/dzdia-newsroom/deploy/backup.sh daily
+TimeoutStartSec=30min
+Nice=10
+PrivateTmp=true
+NoNewPrivileges=true
