@@ -1,18 +1,27 @@
-# Statut — 2026-10-28 (audit, documentation, B1, R1, B5, B6, S1, S2 et couverture faits)
+# Statut — 2026-10-28 (fin de session : audit terminé côté code, prochaine étape le déploiement sur la VM)
 
 ## Pour reprendre dans une nouvelle session
-- **S1, S2 et la couverture sont faits, commités et poussés** (option B pour S1 et S2 ; commit « Pin the supply chain and build, audit and measure coverage in CI »). Abdou doit vérifier la CI, qui a maintenant **trois jobs** (`checks`, `audit`, `image`), puis le premier passage de Dependabot (les PR du lundi). Points à surveiller au premier run : la durée du build arm64 sous QEMU, et la façon dont Dependabot regroupe les mises à jour de digest seules. La CI de `df96fa1` (B6) n'est pas vérifiée non plus.
-- **Ensuite :** le déploiement sur la VM : c'est un nouveau module, donc 3 ou 4 questions d'architecture à Abdou, puis l'**ADR-0007** (`docs/adr/0007-…md`, en anglais, à ajouter à l'index `docs/adr/README.md`). Pistes de questions : sauvegardes `pg_dump` (fréquence, destination, rétention), procédure de déploiement (`git pull` puis `compose up --build`, ou un script), pare-feu (règles de sécurité Oracle et ufw, ports 22, 80 et 443 seulement), accès SSH (clé seule, utilisateur non-root), DuckDNS en attendant `bot.dzdia.com`.
+- **Première chose à faire : le déploiement sur la VM Oracle Ampere (ARM64).** C'est un nouveau module, donc d'abord **3 ou 4 questions d'architecture** à Abdou (chacune avec une recommandation), puis l'**ADR-0007** (`docs/adr/0007-<titre>.md`, en anglais, format MADR, ajouté à l'index `docs/adr/README.md`). Ne rien coder avant ses réponses. Questions à préparer :
+  - **sauvegardes :** `pg_dump` planifié (fréquence, chiffrement, destination hors de la VM, rétention) et un test de restauration ;
+  - **procédure de déploiement :** `git pull` puis `docker compose --profile prod up -d --build` à la main, ou un script versionné (vérifications, migration, rollback) ;
+  - **accès et pare-feu :** SSH par clé seule avec un utilisateur non-root, règles de sécurité Oracle et `ufw` (ports 22, 80 et 443 seulement), mises à jour automatiques de sécurité (`unattended-upgrades`) ;
+  - **DNS et HTTPS :** DuckDNS en attendant `bot.dzdia.com`, Caddy (Let's Encrypt), puis `set-webhook` avec le bot de prod.
+
+  Pré-requis côté Abdou : compte Oracle Cloud et VM créée, bot de prod (BotFather), `TELEGRAM_BOT_TOKEN`, `TELEGRAM_WEBHOOK_SECRET`. Ce sont des actions sur ses comptes : lui donner les commandes, il les lance.
+- **À surveiller lundi :** les premières PR de Dependabot. Vérifier comment il regroupe les mises à jour de digest seules. Une PR qui touche l'image Postgres ou uv sera rouge tant que `ci.yml` n'est pas aligné à la main : c'est le test de garde qui fait son travail (`docs/development/conventions.md`, section « Dependencies and supply chain »).
+- **Reste ouvert dans l'audit** (petits points, à traiter quand ils deviennent utiles) : B7 (deux nombres collés lus comme un seul, avant `match`), R3, R7, R9, R11, S5, S6. Prévus plus tard : R4, R5, R6, R8, R10, S3, et A1 à A5 (semaine 2).
 - **Méthode de travail validée par Abdou** (à suivre à chaque étape) :
   1. options présentées en tableau (principe, pour, contre), une recommandation, et les petits choix à part ; Abdou répond en général « A + mes choix » ;
   2. code et tests, puis ruff, `ruff format`, mypy strict et pytest sous Windows, puis la suite Postgres dans Docker (procédure dans `CLAUDE.md`, en arrière-plan) ;
   3. mise à jour de la doc concernée et du statut du point dans `docs/reviews/2026-10-28-design-review.md`, puis de ce fichier et de `docs/fiche_de_suivi.md` (journal, tableau d'état, concepts, questions de recruteurs, chiffres, limites) ;
-  4. demander avant de commiter. « Commite et pousse » couvre les deux. Commits sans `Co-Authored-By` ni mention de Claude ; indexer les fichiers un par un (jamais `git add -A`) et vérifier que la fiche n'est pas dedans. Abdou vérifie lui-même la CI dans l'onglet Actions.
+  4. demander avant de commiter. « Commite et pousse » couvre les deux. Commits sans `Co-Authored-By` ni mention de Claude ; indexer les fichiers un par un (jamais `git add -A`) et vérifier que la fiche n'est pas dedans. **Mettre ce fichier dans son état « commité et poussé » avant le commit**, pour qu'il ne soit pas faux juste après. Abdou vérifie lui-même la CI dans l'onglet Actions.
 - **Pièges déjà rencontrés :**
-  - un script Python avec du texte français passé par un heredoc Bash échoue (unicode, guillemets) : écrire le script dans le scratchpad, puis `PYTHONUTF8=1 uv run python -I <fichier>` ;
+  - un script Python avec du texte français passé par un heredoc Bash échoue (unicode, guillemets) : écrire le script dans le scratchpad **avec l'outil Write**, puis `uv run python -I -X utf8 <fichier>`. `-I` ignore les variables `PYTHON*`, donc `PYTHONUTF8=1` est sans effet : c'est `-X utf8` qui compte (sinon un `print` d'un caractère comme `≥` plante en cp1252) ;
   - un `write_text` Python sous Windows écrit des fins de ligne CRLF : écrire avec `write_bytes(texte.encode("utf-8"))` ;
   - `caplog` ne capture pas le niveau INFO par défaut : `caplog.set_level(logging.INFO, logger=...)` ;
-  - le hook de formatage retire un import ajouté avant son premier usage : ajouter l'usage d'abord, ou vérifier les imports après coup.
+  - le hook de formatage retire un import ajouté avant son premier usage : ajouter l'usage d'abord, ou vérifier les imports après coup ;
+  - `sleep` au premier plan est bloqué : lancer les commandes longues en arrière-plan et attendre la notification ;
+  - pour épingler une image ou une action (S1) : `docker buildx imagetools inspect <image:tag>` donne le digest d'index multi-architecture ; `git ls-remote https://github.com/<owner>/<repo> 'refs/tags/<tag>^{}'` donne le SHA de commit d'une action (sans `gh`) ; l'API `https://hub.docker.com/v2/repositories/<repo>/tags?name=<préfixe>` liste les tags. uv ne publie plus de tags versionnés `bookworm` : la procédure de test Docker utilise `ghcr.io/astral-sh/uv:0.13.6-python3.12-trixie-slim`.
 - **Sessions du 2026-10-28 :**
   - **Audit complet :** `docs/reviews/2026-10-28-design-review.md`. Chaque point a un identifiant et un statut. Corrigés : B1, B2, B3, B4, B5, B6, R1, R2, S1, S2. Ouverts : B7, R3, R7, R9, R11, S5, S6 ; S4 documenté ; prévus plus tard : R4, R5, R6, R8, R10, S3, et les questions d'architecture A1 à A5 (semaine 2).
   - **Documentation professionnelle en anglais :** index dans `docs/README.md`. Les ADR sont **un fichier par décision** dans `docs/adr/` (format MADR, modèle `template.md`). Les originaux en français restent dans l'historique Git (commit `8e32200`). Les ADR 0001 à 0006 sont acceptés.
@@ -24,12 +33,14 @@
   - `6ed8199` : B1 et R1 ;
   - `debd2fc` : B5 ;
   - `e5d612d` : une passation, qui met à jour ce fichier ;
-  - `df96fa1` : B6.
+  - `df96fa1` : B6 ;
+  - `c578779` : S1, S2 et la couverture ;
+  - un dernier commit de passation, qui met à jour ce fichier.
 
-  Le dernier commit porte S1, S2 et la couverture. L'arbre de travail est propre.
+  L'arbre de travail est propre.
 
 - **Dépôt GitHub :** `origin` = https://github.com/Mounso/dzdia-newsroom. Tout est sur `main`. Le 2026-10-27, l'historique a été réécrit et poussé en force pour retirer les mentions de co-auteur : **aucun commit ne porte de ligne `Co-Authored-By`**, et il ne faut pas en ajouter.
-- **CI :** verte jusqu'à `debd2fc` inclus, test de bout en bout compris (vérifiée par Abdou dans l'onglet Actions le 2026-10-28). Pour le commit de passation, elle n'est pas vérifiée, mais il ne touche que de la doc. Claude ne peut pas la lire : `gh` n'est pas installé et le dépôt n'est pas lisible par l'API publique.
+- **CI :** trois jobs (`checks`, `audit`, `image`), tous verts sur `c578779` (vérifié par Abdou dans l'onglet Actions le 2026-10-28), donc B6 compris. Le job `audit` tourne aussi chaque lundi. Claude ne peut pas lire la CI : `gh` n'est pas installé et le dépôt n'est pas lisible par l'API publique.
 - **Fichiers locaux, jamais commités** (exclus via `.git/info/exclude`) :
   - `Refactorisation DzdiaBot v2.1.md` : le cahier des charges complet (périmètre, architecture cible, feuille de route, questions de découverte) ;
   - `docs/fiche_de_suivi.md` : la fiche de préparation aux entretiens d'Abdou. **La mettre à jour à la fin de chaque étape**, en même temps que ce fichier ;
@@ -127,12 +138,12 @@
   - **R8 :** le retry de `GeminiClient` ignore `retryDelay`, et rien ne limite le débit.
 
 ## Prochaines étapes, dans l'ordre
-1. **Avant tout :** l'échange de découverte avec les journalistes (§9 du cahier des charges). Questions à ajouter :
+1. **Côté Abdou, en parallèle :** l'échange de découverte avec les journalistes (§9 du cahier des charges), avant la mise en service pour l'équipe. Questions à ajouter :
    - un sous-domaine de dzdia.com pour le webhook (par exemple `bot.dzdia.com`) ;
    - l'identifiant du groupe Telegram de l'équipe ;
    - les identifiants Telegram des journalistes, pour la liste blanche.
-2. **Déploiement sur la VM Oracle Ampere (ARM64)**, avec Caddy et DuckDNS en attendant le sous-domaine. Pré-requis côté Abdou : compte Oracle Cloud, bot BotFather, `TELEGRAM_BOT_TOKEN`, `TELEGRAM_WEBHOOK_SECRET`.
-3. **Reprendre `extract` puis `match`**, et inspecter la répartition trouvé / non trouvé par type. Ajuster `--name-threshold` si nécessaire.
+2. **Déploiement sur la VM Oracle Ampere (ARM64)** : questions d'architecture, ADR-0007, puis mise en place (voir en haut). Caddy et DuckDNS en attendant le sous-domaine.
+3. **Reprendre `extract` puis `match`** (choisir d'abord le modèle extracteur, voir « En pause » ; corriger B7 avant `match`), et inspecter la répartition trouvé / non trouvé par type. Ajuster `--name-threshold` si nécessaire.
 4. **Étiquetage :** `export-labels`, étiquetage S/C/N par Abdou dans Excel, puis `import-labels` et `report`. Commiter `labels.jsonl` et `report.md`.
 5. **Passe parallèle du LLM-juge** sur les mêmes éléments. Les verdicts sont stockés à part, pour la calibration en semaine 5.
 
@@ -140,4 +151,4 @@
 - **Le webhook du bot de dev pointe encore sur une URL trycloudflare morte**, car la pile de dev est arrêtée. Telegram garde les updates en attente (environ 24 h). Pour reprendre les tests en local : `docker compose --profile dev up -d --build`, lire la nouvelle URL dans `docker compose logs cloudflared`, puis relancer `set-webhook`. Le volume `pgdata` de dev contient le job de test (statut `done`).
 - **`.env.example`** : Abdou doit vérifier qu'il liste toutes les variables (`POSTGRES_PASSWORD`, `TELEGRAM_*`, `LOG_FORMAT`, `LOG_LEVEL`, `PUBLIC_HOST`, `API_PORT`, `POSTGRES_PORT`), car Claude ne peut pas le lire.
 - **Avertissements de pytest, sans effet aujourd'hui :** `StarletteDeprecationWarning`, car `TestClient` utilise httpx ; `_UnionGenericAlias`, qui vient de google-genai.
-- **Image Docker de 406 Mo :** les dépendances des évals (trafilatura, google-genai) y sont incluses. On les garde, car la v2 s'en servira dès la semaine 2.
+- **Image Docker de 401 Mo** (406 Mo avant S1) : les dépendances des évals (trafilatura, google-genai) y sont incluses. On les garde, car la v2 s'en servira dès la semaine 2.
