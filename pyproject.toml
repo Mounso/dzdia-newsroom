@@ -19,10 +19,14 @@ dependencies = [
 ]
 
 [dependency-groups]
+audit = [
+    "pip-audit>=2.10.1",
+]
 dev = [
     "mypy>=1.11",
     "pytest>=8.3",
     "pytest-asyncio>=0.24",
+    "pytest-cov>=7.1.0",
     "ruff>=0.6",
 ]
 
@@ -37,6 +41,17 @@ packages = ["src/dzdia_newsroom"]
 pythonpath = ["."]
 testpaths = ["tests"]
 asyncio_mode = "auto"
+
+[tool.coverage.run]
+source = ["src/dzdia_newsroom", "evals"]
+branch = true
+
+[tool.coverage.report]
+# Ratchet: one point under the total measured with Postgres (69 % on 2026-10-28). Raise it as
+# coverage grows, never lower it to make a change pass.
+fail_under = 68
+show_missing = true
+skip_covered = true
 
 [tool.ruff]
 line-length = 100

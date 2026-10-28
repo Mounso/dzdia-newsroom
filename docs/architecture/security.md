@@ -80,13 +80,19 @@ Three boundaries matter:
 - **Sent to third parties (planned):** source material and prompts to the LLM provider. Whether a free tier allows training on submitted data must be checked per provider and region before production use, as required by the product spec.
 - **Planned:** audio and video files deleted after transcription; an `audit_logs` table for tool calls (tool, arguments, user, result, cost).
 
+## Supply chain
+
+- Python packages are locked with hashes (`uv.lock`); images are pinned by tag and digest; GitHub Actions by commit SHA. Dependabot proposes updates weekly, and a guard test fails on any unpinned reference.
+- The CI audits every locked package for known advisories (`pip-audit`, also weekly), builds the image for amd64 and arm64, and runs with a read-only token.
+- Not covered yet: scanning the OS packages of the image (Trivy or similar), and signing or attesting images (none are published).
+
+Details and procedures: [conventions](../development/conventions.md#dependencies-and-supply-chain).
+
 ## Known gaps
 
 | Id | Gap | Planned fix |
 |---|---|---|
 | R4 / S3 | Job payloads (message text, raw update) are kept forever. | Retention job and payload minimization, with an ADR. |
-| S1 | Container images and GitHub Actions are pinned by tag, not by digest or SHA; no automated dependency updates. | Pin versions, add Dependabot or Renovate. |
-| S2 | CI does not build the image or audit dependencies for known vulnerabilities. | `docker build` and `pip-audit` (or `osv-scanner`) in CI. |
 | S4 | `POSTGRES_PASSWORD` is interpolated into a URL and must be URL-safe. | Documented in [configuration](../operations/configuration.md). |
 | S5 | The webhook route accepts any source IP (the secret is the control). | Optional: restrict to Telegram's published IP ranges in Caddy. |
 | R7 | After an outage, Telegram redelivers up to 24 h of updates and the bot answers stale messages. | Ignore or flag messages older than a threshold. |

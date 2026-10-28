@@ -1,8 +1,8 @@
-# Statut — 2026-10-28 (audit, documentation, B1, R1, B5 et B6 faits)
+# Statut — 2026-10-28 (audit, documentation, B1, R1, B5, B6, S1, S2 et couverture faits)
 
 ## Pour reprendre dans une nouvelle session
-- **B6 est fait, commité et poussé** (option B, bornes de Manski). La CI de ce commit n'est pas encore vérifiée : demander à Abdou.
-- **Ensuite, dans l'ordre :** S1 et S2 (épinglage des images et des actions GitHub, `docker build` et `pip-audit` en CI ; options à présenter d'abord), puis la couverture de tests en CI. Puis le déploiement sur la VM : c'est un nouveau module, donc 3 ou 4 questions d'architecture à Abdou, puis l'**ADR-0007** (`docs/adr/0007-…md`, en anglais, à ajouter à l'index `docs/adr/README.md`). Pistes de questions : sauvegardes `pg_dump` (fréquence, destination, rétention), procédure de déploiement (`git pull` puis `compose up --build`, ou un script), pare-feu (règles de sécurité Oracle et ufw, ports 22, 80 et 443 seulement), accès SSH (clé seule, utilisateur non-root), DuckDNS en attendant `bot.dzdia.com`.
+- **S1, S2 et la couverture sont faits, commités et poussés** (option B pour S1 et S2 ; commit « Pin the supply chain and build, audit and measure coverage in CI »). Abdou doit vérifier la CI, qui a maintenant **trois jobs** (`checks`, `audit`, `image`), puis le premier passage de Dependabot (les PR du lundi). Points à surveiller au premier run : la durée du build arm64 sous QEMU, et la façon dont Dependabot regroupe les mises à jour de digest seules. La CI de `df96fa1` (B6) n'est pas vérifiée non plus.
+- **Ensuite :** le déploiement sur la VM : c'est un nouveau module, donc 3 ou 4 questions d'architecture à Abdou, puis l'**ADR-0007** (`docs/adr/0007-…md`, en anglais, à ajouter à l'index `docs/adr/README.md`). Pistes de questions : sauvegardes `pg_dump` (fréquence, destination, rétention), procédure de déploiement (`git pull` puis `compose up --build`, ou un script), pare-feu (règles de sécurité Oracle et ufw, ports 22, 80 et 443 seulement), accès SSH (clé seule, utilisateur non-root), DuckDNS en attendant `bot.dzdia.com`.
 - **Méthode de travail validée par Abdou** (à suivre à chaque étape) :
   1. options présentées en tableau (principe, pour, contre), une recommandation, et les petits choix à part ; Abdou répond en général « A + mes choix » ;
   2. code et tests, puis ruff, `ruff format`, mypy strict et pytest sous Windows, puis la suite Postgres dans Docker (procédure dans `CLAUDE.md`, en arrière-plan) ;
@@ -14,7 +14,7 @@
   - `caplog` ne capture pas le niveau INFO par défaut : `caplog.set_level(logging.INFO, logger=...)` ;
   - le hook de formatage retire un import ajouté avant son premier usage : ajouter l'usage d'abord, ou vérifier les imports après coup.
 - **Sessions du 2026-10-28 :**
-  - **Audit complet :** `docs/reviews/2026-10-28-design-review.md`. Chaque point a un identifiant et un statut. Corrigés : B1, B2, B3, B4, B5, B6, R1, R2. Ouverts : B7, R3, R7, R9, R11, S1, S2, S5, S6 ; S4 documenté ; prévus plus tard : R4, R5, R6, R8, R10, S3, et les questions d'architecture A1 à A5 (semaine 2).
+  - **Audit complet :** `docs/reviews/2026-10-28-design-review.md`. Chaque point a un identifiant et un statut. Corrigés : B1, B2, B3, B4, B5, B6, R1, R2, S1, S2. Ouverts : B7, R3, R7, R9, R11, S5, S6 ; S4 documenté ; prévus plus tard : R4, R5, R6, R8, R10, S3, et les questions d'architecture A1 à A5 (semaine 2).
   - **Documentation professionnelle en anglais :** index dans `docs/README.md`. Les ADR sont **un fichier par décision** dans `docs/adr/` (format MADR, modèle `template.md`). Les originaux en français restent dans l'historique Git (commit `8e32200`). Les ADR 0001 à 0006 sont acceptés.
   - **Règle :** quand un comportement change, mettre à jour la doc concernée et le statut du point dans la revue de conception.
 - **Derniers commits, tous poussés sur `main` :**
@@ -23,9 +23,10 @@
   - `1152c3f` : une passation ;
   - `6ed8199` : B1 et R1 ;
   - `debd2fc` : B5 ;
-  - `e5d612d` : une passation, qui met à jour ce fichier.
+  - `e5d612d` : une passation, qui met à jour ce fichier ;
+  - `df96fa1` : B6.
 
-  Le dernier commit porte B6 (« Report eval rates as bounds while labels are pending »). L'arbre de travail est propre.
+  Le dernier commit porte S1, S2 et la couverture. L'arbre de travail est propre.
 
 - **Dépôt GitHub :** `origin` = https://github.com/Mounso/dzdia-newsroom. Tout est sur `main`. Le 2026-10-27, l'historique a été réécrit et poussé en force pour retirer les mentions de co-auteur : **aucun commit ne porte de ligne `Co-Authored-By`**, et il ne faut pas en ajouter.
 - **CI :** verte jusqu'à `debd2fc` inclus, test de bout en bout compris (vérifiée par Abdou dans l'onglet Actions le 2026-10-28). Pour le commit de passation, elle n'est pas vérifiée, mais il ne touche que de la doc. Claude ne peut pas la lire : `gh` n'est pas installé et le dépôt n'est pas lisible par l'API publique.
@@ -34,7 +35,8 @@
   - `docs/fiche_de_suivi.md` : la fiche de préparation aux entretiens d'Abdou. **La mettre à jour à la fin de chaque étape**, en même temps que ce fichier ;
   - `evals/.data/` (ignoré par Git) : copies des articles, `runs.jsonl`, et dans `pre_b5/` les 20 extractions mises de côté par B5.
 - **Environnement :** Windows 11, avec WSL (Ubuntu) et Docker Desktop. Les tests Postgres tournent dans un conteneur Linux (commande dans `CLAUDE.md`), car psycopg en async ne fonctionne pas avec la boucle asyncio par défaut de Windows. **Docker Desktop doit être lancé** avant toute commande `docker`. S'il ne l'est pas, Claude peut le démarrer avec `Start-Process` sur `C:\Users\abdou\AppData\Local\Programs\DockerDesktop\Docker Desktop.exe`, puis attendre que `docker info` réponde.
-- **Vérifications (2026-10-28, après B6) :** ruff, `ruff format` et mypy strict ne signalent rien. Sous Windows, 132 tests passent et 13 sont sautés (les tests Postgres). Dans Docker, les 145 passent (dont les tests Postgres).
+- **Vérifications (2026-10-28, après S1 et S2) :** ruff, `ruff format` et mypy strict ne signalent rien. Sous Windows, 147 tests passent et 13 sont sautés (les tests Postgres). Dans Docker, les 160 passent, couverture de branches 69 % (plancher 68). `actionlint` ne signale rien sur `ci.yml`. L'image se construit en amd64 (35 s) et en arm64 sous émulation (72 s), et le test de fumée passe sur les deux (Python 3.12.16, uid 10001). `pip-audit` : aucune vulnérabilité connue sur les 90 paquets verrouillés.
+- **Attention, `uv run pytest --cov` sous Windows échoue au plancher** (environ 64 %, car les tests Postgres sont sautés) : c'est normal. `uv run pytest` sans `--cov` n'est pas concerné. Pour le vrai chiffre, ajouter `--cov` à la procédure Docker.
 - **`.env.example` est illisible pour Claude** (règle de `.claude/settings.json`). Abdou doit y ajouter lui-même les nouvelles variables (voir les étapes 8 et 9 ci-dessous).
 - **`.env` d'Abdou :** il contient un token de bot de dev (actif) et un token de bot de prod (en commentaire), `POSTGRES_PASSWORD`, `TELEGRAM_WEBHOOK_SECRET` et `TELEGRAM_ALLOWED_USER_IDS` (son identifiant Telegram : `5271201903`). Claude ne lit jamais `.env` ; pour vérifier une variable non secrète, utiliser `docker inspect` sur le conteneur concerné.
 
@@ -100,6 +102,16 @@
     - le rapport gagne une colonne « Undetermined outputs », le nombre en attente dans le tableau par type, et un bandeau « Provisional report » tant qu'il reste de l'attente. Le taux de contradictions et les taux par type restent sur les éléments tranchés ;
     - **options écartées :** (A) exclure les sorties indéterminées (toujours biaisé) ; (C) un seul chiffre présenté comme une borne basse ;
     - 3 nouveaux tests, 2 tests adaptés. Doc mise à jour : `docs/evals/baseline-v1.md` (méthode et limites), roadmap, revue de conception (B6 `Fixed`).
+15. **S1, S2 et couverture** (2026-10-28, option B pour S1 et S2) :
+    - **épinglage :** toutes les images par tag exact et digest d'index multi-architecture (`Dockerfile`, compose, CI, y compris la ligne `# syntax=`, `tonistiigi/binfmt` et `moby/buildkit`), les actions par SHA de commit avec la version en commentaire. Versions : Python 3.12.16-slim-bookworm, uv 0.13.6, pgvector 0.8.7-pg16-bookworm (`pg16` pointait déjà dessus : aucun changement pour le volume), Caddy 2.11.7, cloudflared 2026.10.5, checkout v7.0.1, setup-uv v10.3.3 ;
+    - **Dockerfile :** l'étage de build part de la même image Python que l'étage final, et le binaire uv est copié depuis une image uv épinglée. Avant, les deux étages pouvaient avoir des versions de Python différentes. uv ne publie d'ailleurs plus de tags versionnés `bookworm` ;
+    - **Dependabot** (`.github/dependabot.yml`) : `uv`, `github-actions`, `docker`, `docker-compose`, chaque lundi ; mineures et correctifs groupés, majeures à part ; Python reste en 3.12 ;
+    - **test de garde** `tests/test_supply_chain.py` (15 tests) : toute référence non épinglée échoue, ainsi que les écarts que Dependabot ne corrige pas (image Postgres de la CI, version de uv dans `ci.yml`, les deux étages Python). Il fige aussi `pg16-bookworm` ;
+    - **CI** (`ci.yml`) : trois jobs. `checks` (comme avant, plus `--cov` et un résumé de couverture), `audit` (`pip-audit --strict` sur `uv.lock` exporté avec hashes, aussi chaque lundi ; exceptions dans `.github/pip-audit-ignore.txt`, avec raison et date de revue), `image` (build amd64 et arm64, puis test de fumée de l'image amd64). Jeton en lecture seule, `persist-credentials: false`, délais maximaux, `concurrency` ;
+    - **couverture :** `pytest-cov`, couverture de branches de `src/` et `evals/`, 69 % avec Postgres, plancher `fail_under = 68` (cliquet) ;
+    - **options écartées :** S1-A (tags exacts sans digest), S1-C (Renovate), S2-A (build amd64 seul), S2-C (scan Trivy, à reconsidérer une fois la VM en service) ;
+    - doc mise à jour : `docs/development/conventions.md` (nouvelle section « Dependencies and supply chain »), `testing.md` (CI et couverture), `security.md`, `deployment.md`, amendement en tête de l'ADR-0006, revue de conception (S1 et S2 `Fixed`, couverture), roadmap, et les commandes de test Docker dans `CLAUDE.md` ;
+    - `.gitignore` ignore maintenant les fichiers de couverture.
 
 ## En pause : étape `extract`
 - **État :** 0/144. Les 20 extractions faites avec `gemini-2.5-flash` (les 124 autres avaient pris des 429 : le free tier est limité à 5 requêtes par minute et 20 par jour) n'avaient pas de date. Elles ont été déplacées dans `evals/.data/baseline_v1/pre_b5/` (local, rien de supprimé), et `extract` repartira de zéro. `match` n'est pas lancé.
@@ -115,7 +127,6 @@
   - **R8 :** le retry de `GeminiClient` ignore `retryDelay`, et rien ne limite le débit.
 
 ## Prochaines étapes, dans l'ordre
-0. **Correctifs restants de l'audit :** S1, S2 et la couverture de tests en CI (options à présenter d'abord). B1, R1, B5 et B6 sont faits.
 1. **Avant tout :** l'échange de découverte avec les journalistes (§9 du cahier des charges). Questions à ajouter :
    - un sous-domaine de dzdia.com pour le webhook (par exemple `bot.dzdia.com`) ;
    - l'identifiant du groupe Telegram de l'équipe ;

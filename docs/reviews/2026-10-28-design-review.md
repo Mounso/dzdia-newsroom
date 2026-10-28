@@ -85,12 +85,21 @@ Status: **Fixed** (with the change that fixed it), **Open**, or **Planned** (sch
 
 | Id | Finding | Proposal | Status |
 |---|---|---|---|
-| S1 | Images pinned by tag only (`cloudflared:latest`, `caddy:2`, `pgvector:pg16`, `python:3.12-slim-bookworm`); GitHub Actions pinned by tag, not SHA; no automated updates. | Pin exact versions (digests in production); add Dependabot or Renovate. | Open |
-| S2 | CI does not build the Docker image (a broken Dockerfile shows up only at deployment) and does not audit dependencies. | `docker build` step; `pip-audit` or `osv-scanner` on `uv.lock`. | Open |
+| S1 | Images pinned by tag only (`cloudflared:latest`, `caddy:2`, `pgvector:pg16`, `python:3.12-slim-bookworm`); GitHub Actions pinned by tag, not SHA; no automated updates. | Pin exact versions (digests in production); add Dependabot or Renovate. | Fixed |
+| S2 | CI does not build the Docker image (a broken Dockerfile shows up only at deployment) and does not audit dependencies. | `docker build` step; `pip-audit` or `osv-scanner` on `uv.lock`. | Fixed |
 | S3 | The stored `raw` update contains personal data, kept indefinitely. | Minimize `raw` or purge it earlier; document retention (with R4). | Planned |
 | S4 | A `POSTGRES_PASSWORD` containing `@`, `/` or `:` breaks the `DATABASE_URL` built by compose. | Documented in the [configuration reference](../operations/configuration.md#generating-secrets). | Fixed (documented) |
 | S5 | The webhook accepts any source IP; the secret is the control. | Optional defense in depth: allow only Telegram's IP ranges in Caddy. | Open |
 | S6 | Development tooling: the AI assistant's deny rule covers `Read(./.env)` but not shell commands such as `cat .env`. | Add matching `Bash(...)` deny rules (partial defense). | Open |
+
+### S1 and S2 — fixed
+
+- **S1 (option B of three, chosen by Abdou):** every image is pinned by exact tag and multi-arch index digest (the VM is arm64), including the `# syntax=` frontend and the images the CI pulls implicitly (`tonistiigi/binfmt` for QEMU, `moby/buildkit` for buildx). Actions are pinned by full commit SHA with the version in a comment. Dependabot updates `uv`, `github-actions`, `docker` and `docker-compose` weekly, minor and patch grouped, majors separate; Python stays on 3.12 until a deliberate upgrade. [`tests/test_supply_chain.py`](../../tests/test_supply_chain.py) fails on any unpinned reference and on drift Dependabot cannot fix (CI Postgres image, uv version in `ci.yml`, the two Python stages of the Dockerfile), and pins the Postgres major and Debian release (`pg16-bookworm`): a major upgrade needs a dump and restore, a new glibc can change collations. `pg16` pointed to `0.8.7-pg16-bookworm` already, so the existing volume sees no change.
+- **Found while fixing S1:** the two Dockerfile stages could run different Python patch releases (the venv was built by the uv image's Python and run by `python:3.12-slim`'s). The build stage now uses the same pinned Python image as the runtime and copies the uv binary from a pinned uv image. uv also no longer publishes versioned `bookworm` tags, which the old floating tag hid.
+- **S2 (option B of three):** an `image` CI job builds for `linux/amd64` and `linux/arm64` (QEMU) with the GitHub Actions cache, then imports every entry point in the amd64 image as the non-root user. An `audit` job runs `pip-audit --strict` on every group of `uv.lock`, exported with hashes, on every push and weekly; accepted advisories need an entry with a reason and review date in `.github/pip-audit-ignore.txt`.
+- **CI hardening (same change):** read-only token (`permissions: contents: read`), `persist-credentials: false`, job timeouts, concurrency that cancels superseded runs except on `main`, uv and Python pinned in `setup-uv`. Checked with `actionlint` (and its `shellcheck` pass).
+- **Options set aside:** (S1-A) exact tags without digests: readable, but a tag can be republished. (S1-C) Renovate: richer (automerge, dashboard), but a third-party app with access to a private repository, for little gain with one developer. (S2-A) amd64 build only: proves nothing about the production architecture. (S2-C) image scanning with Trivy: noisy on Debian advisories without fixes; worth adding once the VM runs, as digest updates already bring the base image fixes.
+- **To verify on the first run:** that Dependabot groups digest-only updates as expected, and the CI duration of the arm64 build (72 s locally under Docker Desktop's emulation).
 
 Strengths worth keeping: constant-time secret comparison; fail-closed allowlist; per-process secrets (the API never sees the bot token); token redaction and silenced `httpx` request logs; allowlist `.dockerignore`; non-root runtime image; two public routes with a body limit; no `parse_mode` on outgoing messages.
 
@@ -121,12 +130,12 @@ Strengths worth keeping: constant-time secret comparison; fail-closed allowlist;
 ## 5. Tests
 
 - **Strong functional coverage:** every queue guarantee has a test (fencing, expired lease, concurrent claims, graceful stop, notification), as do the webhook (status codes, deduplication) and the Telegram client (short and long 429, 5xx, network errors, token redaction).
-- **Gaps:** no coverage measurement in CI (`pytest-cov`).
+- **Coverage (added on 2026-10-28):** branch coverage of `src/` and `evals/` measured with Postgres: 69 %. The untested parts are mostly the entry points (`__main__` modules, `db/pool.py`, the JSON log setup), exercised only by the Docker smoke tests. `fail_under` is set to 68, a ratchet that only goes up.
 
 ## 6. Remediation plan
 
 1. ~~**Quick fixes** (no design choice): B2, B3, B4, R2.~~ Done on 2026-10-28 (commit `dbd3e51`).
 2. ~~**B1 and R1:** retries guided by `retry_after`, and releasing jobs on shutdown.~~ Done on 2026-10-28 (option A for both).
 3. ~~**Evals:** B5 and the extraction timestamp, then B6, before running `extract` again.~~ Done on 2026-10-28 (option A for B5, option B for B6).
-4. **CI and supply chain:** S1, S2 and coverage measurement.
+4. ~~**CI and supply chain:** S1, S2 and coverage measurement.~~ Done on 2026-10-28 (option B for both).
 5. **Week 2 (ADRs):** A1 to A5, R4, R5, R6, R8, R10.

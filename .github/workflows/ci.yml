@@ -1,15 +1,31 @@
 name: ci
 
+# Supply chain (S1, S2): actions are pinned by commit SHA and images by tag and digest; Dependabot
+# keeps them current (.github/dependabot.yml). tests/test_supply_chain.py fails on an unpinned
+# reference or on drift between this file, the Dockerfile and docker-compose.yml.
+
 on:
   push:
   pull_request:
+  schedule:
+    - cron: "17 5 * * 1"  # weekly audit: new advisories against unchanged dependencies
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
   checks:
+    if: github.event_name != 'schedule'
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     services:
       postgres:
-        image: pgvector/pgvector:pg16
+        # Same image as docker-compose.yml (enforced by tests/test_supply_chain.py).
+        image: pgvector/pgvector:0.8.7-pg16-bookworm@sha256:7b822b0aac60967beb1ea5e576b8602c94c300a157d187f385ae3e0da199b90a
         env:
           POSTGRES_USER: dzdia
           POSTGRES_PASSWORD: dzdia  # throwaway CI container, not a real secret
@@ -21,10 +37,81 @@ jobs:
     env:
       TEST_DATABASE_URL: postgresql://dzdia:dzdia@localhost:5432/dzdia_test
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2  # v10.3.3
+        with:
+          version: "0.13.6"  # same as the uv stage of the Dockerfile
+          python-version: "3.12"  # the runtime image's Python
       - run: uv sync --frozen
       - run: uv run ruff check .
       - run: uv run ruff format --check .
       - run: uv run mypy
-      - run: uv run pytest -q
+      - run: uv run pytest -q --cov --cov-report=term
+      - name: Coverage summary
+        if: ${{ !cancelled() }}
+        run: uv run coverage report --format=markdown --fail-under=0 >> "$GITHUB_STEP_SUMMARY"
+
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2  # v10.3.3
+        with:
+          version: "0.13.6"
+          python-version: "3.12"
+      - name: Audit locked dependencies
+        # Every group of uv.lock, with hashes, so pip-audit checks exactly what is locked without
+        # resolving anything. Accepted advisories live in .github/pip-audit-ignore.txt.
+        run: |
+          uv export --frozen --all-groups --no-emit-project --format requirements-txt --quiet \
+            -o "$RUNNER_TEMP/requirements-audit.txt"
+          ignores=()
+          while read -r id; do ignores+=(--ignore-vuln "$id"); done \
+            < <(grep -oE '^[A-Z]+-[A-Za-z0-9-]+' .github/pip-audit-ignore.txt || true)
+          uv run --frozen --only-group audit pip-audit --strict --disable-pip --require-hashes \
+            -r "$RUNNER_TEMP/requirements-audit.txt" "${ignores[@]}"
+
+  image:
+    if: github.event_name != 'schedule'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1  # v4.4.0
+        with:
+          image: tonistiigi/binfmt:qemu-v10.2.3@sha256:400a4873b838d1b89194d982c45e5fb3cda4593fbfd7e08a02e76b03b21166f0
+          platforms: arm64
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069  # v4.4.1
+        with:
+          driver-opts: image=moby/buildkit:v0.34.1@sha256:99368f3e46177c6405b9740e4461d91cee004128daeecca78d4ceac50ec1da5c
+      - name: Build for amd64 and arm64 (the production VM is ARM64)
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc  # v7.4.0
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: false
+          provenance: false
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - name: Load the amd64 image
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc  # v7.4.0
+        with:
+          context: .
+          platforms: linux/amd64
+          load: true
+          tags: dzdia-newsroom:ci
+          provenance: false
+          cache-from: type=gha
+      - name: Smoke-test the image
+        # The runtime venv has no dev dependencies: importing every entry point catches a
+        # dependency that only the test environment provided.
+        run: |
+          docker run --rm --entrypoint python dzdia-newsroom:ci -c \
+            "import os, dzdia_newsroom.api, dzdia_newsroom.worker, dzdia_newsroom.db.migrate; assert os.getuid() == 10001"

@@ -8,3 +8,9 @@ __pycache__/
 
 # Local eval data: copyrighted article snapshots and raw model outputs never leave the machine.
 evals/.data/
+
+# Coverage artifacts
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml

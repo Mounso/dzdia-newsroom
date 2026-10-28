@@ -75,6 +75,23 @@ A job whose kind has no handler is marked `dead` (`no handler for kind ...`).
 4. Document it in the [configuration reference](../operations/configuration.md).
 5. Add a test in `tests/test_config.py` if it has parsing or validation logic.
 
+## Dependencies and supply chain
+
+Everything the build or the CI downloads is pinned, so that a build is reproducible and a moved tag cannot inject code (as when `tj-actions/changed-files` was compromised in March 2025).
+
+| What | Pinned by | Updated by |
+|---|---|---|
+| Python packages | `uv.lock`, with hashes | Dependabot (`uv`), weekly |
+| GitHub Actions | full commit SHA, version in a comment (`@<sha>  # v7.0.1`) | Dependabot (`github-actions`), weekly |
+| Images in the `Dockerfile` and `docker-compose.yml` | exact tag and multi-arch index digest (`caddy:2.11.7@sha256:…`) | Dependabot (`docker`, `docker-compose`), weekly |
+| Postgres service image and uv version in `ci.yml`, `# syntax=` line of the `Dockerfile` | same | by hand, in the Dependabot PR that bumps the matching reference |
+
+- **Use the index digest**, not a platform digest: the image runs on amd64 (workstation, CI) and arm64 (the VM). `docker buildx imagetools inspect <image:tag>` prints it.
+- **Guard test.** [`tests/test_supply_chain.py`](../../tests/test_supply_chain.py) fails on an unpinned image or action, and on drift that Dependabot cannot fix: the CI Postgres image must equal the compose one, the uv version in `ci.yml` must equal the `Dockerfile` uv stage, and both `Dockerfile` stages must use the same Python image.
+- **Deliberate upgrades only** for Python (3.12, ignored by Dependabot beyond patches) and Postgres (`pg16-bookworm`: a major upgrade needs a dump and restore, and a new glibc can change collation order). Changing either means changing the guard test and following the migration procedure.
+- **Dependabot PRs:** one grouped PR per ecosystem for minor and patch updates, one PR per major. Read the changelog of majors; merge only when the CI is green.
+- **Vulnerability audit.** The `audit` CI job runs `pip-audit` on every group of `uv.lock` (exported with hashes, nothing resolved), on every push and every Monday. It fails on any known advisory. To accept one, add its id to [`.github/pip-audit-ignore.txt`](../../.github/pip-audit-ignore.txt) with the reason and a review date; prefer upgrading.
+
 ## Architecture decision records
 
 Significant decisions (a new module, a dependency, a data model, an operational choice) are recorded as ADRs in [`docs/adr/`](../adr/README.md): context, decision, rejected alternatives, consequences. An accepted ADR is never rewritten; a later ADR supersedes or amends it and says so in its header.
@@ -84,4 +101,4 @@ Significant decisions (a new module, a dependency, a data model, an operational 
 - Imperative subject line in English, describing the change: `Add Postgres job queue with heartbeat-renewed leases (ADR-004)`.
 - One logical change per commit, with its tests and documentation.
 - Reference the ADR in the subject when the commit implements one.
-- The CI must pass: ruff, ruff format, mypy and the full test suite.
+- The CI must pass: ruff, ruff format, mypy, the full test suite with its coverage floor, the dependency audit and the image build.

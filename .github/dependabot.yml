@@ -1,0 +1,51 @@
+# Weekly dependency updates (S1): one grouped PR per ecosystem for minor and patch versions (and
+# image digests), a separate PR for each major version. CI must pass before merging.
+#
+# Not covered by Dependabot, so bumped by hand in the same PR when needed (tests/test_supply_chain.py
+# fails until they match): the Postgres service image and the uv version in ci.yml, and the
+# `# syntax=` line of the Dockerfile.
+version: 2
+
+updates:
+  - package-ecosystem: uv
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    groups:
+      python-packages:
+        update-types: [minor, patch]
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    groups:
+      actions:
+        update-types: [minor, patch]
+
+  - package-ecosystem: docker
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    groups:
+      dockerfile-images:
+        patterns: ["*"]
+        update-types: [minor, patch]
+    ignore:
+      # Stay on Python 3.12 (requires-python, CI and both Dockerfile stages) until a deliberate
+      # upgrade.
+      - dependency-name: python
+        update-types: [version-update:semver-major, version-update:semver-minor]
+
+  - package-ecosystem: docker-compose
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    groups:
+      compose-images:
+        patterns: ["*"]
+        update-types: [minor, patch]

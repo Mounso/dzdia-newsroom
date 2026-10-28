@@ -11,6 +11,7 @@ This page describes how the test suite is organized, how to run it (including th
 | `tests/worker/` | unit | Queue worker (completion, retries, dead jobs, heartbeat, lost lease, graceful stop) and handlers |
 | `tests/evals/` | unit | Baseline harness: sampling, snapshots, runner, extraction, matcher, labeling, report, LLM retry |
 | `tests/test_config.py`, `tests/test_logging_setup.py` | unit | Settings parsing and validation; JSON log format |
+| `tests/test_supply_chain.py` | static | Every image and action is pinned; CI, `Dockerfile` and compose agree (see [conventions](conventions.md#dependencies-and-supply-chain)) |
 | `tests/db/` | integration | Migrations, `JobRepository` against a real Postgres, end-to-end chain webhook -> `jobs` -> worker -> reply |
 
 Shared test doubles:
@@ -45,13 +46,13 @@ psycopg's async mode does not work on the default Windows event loop, so on Wind
 1. Start a throwaway Postgres on a dedicated network:
 
    ```bash
-   docker network create dzdia-test && docker run -d --name dzdia-test-pg --network dzdia-test -e POSTGRES_USER=dzdia -e POSTGRES_PASSWORD=dzdia -e POSTGRES_DB=dzdia_test pgvector/pgvector:pg16
+   docker network create dzdia-test && docker run -d --name dzdia-test-pg --network dzdia-test -e POSTGRES_USER=dzdia -e POSTGRES_PASSWORD=dzdia -e POSTGRES_DB=dzdia_test pgvector/pgvector:0.8.7-pg16-bookworm
    ```
 
 2. Run the suite in a uv container, with the repository mounted read-only:
 
    ```bash
-   docker run --rm --network dzdia-test -v "<repo>:/app:ro" -w /app -e UV_PROJECT_ENVIRONMENT=/tmp/venv -e UV_CACHE_DIR=/tmp/uvcache -e TEST_DATABASE_URL=postgresql://dzdia:dzdia@dzdia-test-pg:5432/dzdia_test ghcr.io/astral-sh/uv:python3.12-bookworm-slim sh -c "uv sync --frozen --quiet && uv run --frozen pytest -q -p no:cacheprovider"
+   docker run --rm --network dzdia-test -v "<repo>:/app:ro" -w /app -e UV_PROJECT_ENVIRONMENT=/tmp/venv -e UV_CACHE_DIR=/tmp/uvcache -e TEST_DATABASE_URL=postgresql://dzdia:dzdia@dzdia-test-pg:5432/dzdia_test ghcr.io/astral-sh/uv:0.13.6-python3.12-trixie-slim sh -c "uv sync --frozen --quiet && uv run --frozen pytest -q -p no:cacheprovider"
    ```
 
 3. Clean up:
@@ -64,13 +65,17 @@ On Linux and macOS, start any Postgres 16 with pgvector and export `TEST_DATABAS
 
 ## Continuous integration
 
-[`.github/workflows/ci.yml`](../../.github/workflows/ci.yml) runs on every push and pull request, on `ubuntu-latest`, with a `pgvector/pgvector:pg16` service container and `TEST_DATABASE_URL` set. Steps, in order:
+[`.github/workflows/ci.yml`](../../.github/workflows/ci.yml) runs on every push and pull request, and every Monday for the audit only. The workflow token is read-only (`permissions: contents: read`), checkouts do not keep it, every job has a timeout, and a new push cancels the previous run of the same branch except on `main`. Three jobs run in parallel:
 
-1. `uv sync --frozen` (fails if `uv.lock` is out of date);
-2. `uv run ruff check .`;
-3. `uv run ruff format --check .`;
-4. `uv run mypy`;
-5. `uv run pytest -q`, integration tests included.
+| Job | Steps |
+|---|---|
+| `checks` | With a Postgres service (same image as compose) and `TEST_DATABASE_URL` set: `uv sync --frozen` (fails if `uv.lock` is out of date), `ruff check`, `ruff format --check`, `mypy`, then `pytest --cov`, integration tests included. Fails under the coverage floor; the coverage table is written to the job summary. |
+| `audit` | `pip-audit` on every group of `uv.lock` (see [conventions](conventions.md#dependencies-and-supply-chain)). |
+| `image` | Builds the image for `linux/amd64` and `linux/arm64` (QEMU emulation; the production VM is arm64) with the GitHub Actions cache, then loads the amd64 image and imports every entry point as the non-root user: the runtime venv has no dev dependencies, so a package that only the tests provided shows up here. Nothing is pushed. |
+
+### Coverage
+
+Branch coverage of `src/dzdia_newsroom` and `evals`, configured in `pyproject.toml` (`[tool.coverage.*]`). `fail_under` is a ratchet, one point under the measured total (69 % on 2026-10-28, floor 68): the margin absorbs rounding, not regressions. Raise it when coverage grows, never lower it to make a change pass. Plain `uv run pytest` does not measure coverage. On Windows, `uv run pytest --cov` skips the Postgres tests and falls under the floor (about 64 %), which is expected; add `--cov` to the Docker procedure above for the real figure.
 
 ## Principles
 

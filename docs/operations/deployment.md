@@ -6,7 +6,7 @@ This page explains how to run the full stack with Docker Compose, locally (profi
 
 | Service | Profile | Role |
 |---|---|---|
-| `postgres` | always | `pgvector/pgvector:pg16`, data in the `pgdata` volume, port bound to `127.0.0.1` |
+| `postgres` | always | `pgvector/pgvector:0.8.7-pg16-bookworm` (pinned by digest), data in the `pgdata` volume, port bound to `127.0.0.1` |
 | `migrate` | always | Applies pending SQL migrations once, then exits |
 | `api` | always | FastAPI webhook receiver, port bound to `127.0.0.1` |
 | `worker` | always | Executes jobs from the Postgres queue |

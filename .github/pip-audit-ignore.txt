@@ -1,0 +1,6 @@
+# Advisories accepted by the `audit` CI job, one per line: the id first, then why it does not
+# apply and a review date. Prefer upgrading; add a line only when no fixed version exists or the
+# vulnerable code path is unreachable here, and remove it at the review date.
+#
+# Example:
+# GHSA-xxxx-xxxx-xxxx  # <package>: only affects <feature>, unused here; review by 2027-01-31

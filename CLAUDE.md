@@ -3,8 +3,8 @@
 - Tests: `uv run pytest -q` | single: `uv run pytest <path> -q --tb=short`
 - DB integration tests (`tests/db/`) run only when `TEST_DATABASE_URL` is set (CI sets it); each test uses a throwaway schema.
   On Windows, run them in Linux containers (psycopg async does not work on the default Windows event loop); from Git Bash, prefix with `MSYS_NO_PATHCONV=1`:
-  1. `docker network create dzdia-test && docker run -d --name dzdia-test-pg --network dzdia-test -e POSTGRES_USER=dzdia -e POSTGRES_PASSWORD=dzdia -e POSTGRES_DB=dzdia_test pgvector/pgvector:pg16`
-  2. `docker run --rm --network dzdia-test -v "<repo>:/app:ro" -w /app -e UV_PROJECT_ENVIRONMENT=/tmp/venv -e UV_CACHE_DIR=/tmp/uvcache -e TEST_DATABASE_URL=postgresql://dzdia:dzdia@dzdia-test-pg:5432/dzdia_test ghcr.io/astral-sh/uv:python3.12-bookworm-slim sh -c "uv sync --frozen --quiet && uv run --frozen pytest -q -p no:cacheprovider"`
+  1. `docker network create dzdia-test && docker run -d --name dzdia-test-pg --network dzdia-test -e POSTGRES_USER=dzdia -e POSTGRES_PASSWORD=dzdia -e POSTGRES_DB=dzdia_test pgvector/pgvector:0.8.7-pg16-bookworm`
+  2. `docker run --rm --network dzdia-test -v "<repo>:/app:ro" -w /app -e UV_PROJECT_ENVIRONMENT=/tmp/venv -e UV_CACHE_DIR=/tmp/uvcache -e TEST_DATABASE_URL=postgresql://dzdia:dzdia@dzdia-test-pg:5432/dzdia_test ghcr.io/astral-sh/uv:0.13.6-python3.12-trixie-slim sh -c "uv sync --frozen --quiet && uv run --frozen pytest -q -p no:cacheprovider"`
   3. `docker rm -f dzdia-test-pg && docker network rm dzdia-test`
 - Migrations: `uv run python -m dzdia_newsroom.db.migrate` (needs `DATABASE_URL`)
 - Types & lint: `uv run mypy && uv run ruff check .`

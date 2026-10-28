@@ -20,7 +20,9 @@ x-database-url: &database-url "postgresql://dzdia:${POSTGRES_PASSWORD:?set POSTG
 
 services:
   postgres:
-    image: pgvector/pgvector:pg16
+    # Pinned to the PostgreSQL major (pg16) and the Debian release: a major upgrade needs a dump and
+    # restore, and a new glibc can change collations. tests/test_supply_chain.py enforces both.
+    image: pgvector/pgvector:0.8.7-pg16-bookworm@sha256:7b822b0aac60967beb1ea5e576b8602c94c300a157d187f385ae3e0da199b90a
     restart: unless-stopped
     environment:
       POSTGRES_USER: dzdia
@@ -96,7 +98,7 @@ services:
   # Dev only: a public HTTPS URL for the webhook, without an account. The URL changes on every
   # start: read it with `docker compose logs cloudflared`, then run `set-webhook` again.
   cloudflared:
-    image: cloudflare/cloudflared:latest
+    image: cloudflare/cloudflared:2026.10.5@sha256:1b1d34d0a9c0bfca9de72db8460d328db3f19edd2b96169114e3e893a97bbe53
     profiles: ["dev"]
     restart: unless-stopped
     command: ["tunnel", "--no-autoupdate", "--url", "http://api:8000"]
@@ -107,7 +109,7 @@ services:
 
   # Prod only: the single public entry point, with automatic Let's Encrypt certificates.
   caddy:
-    image: caddy:2
+    image: caddy:2.11.7@sha256:5e5286cb37d44086d651a5363f05f43a692ce4d649d88fb1bd844579f45fa9e8
     profiles: ["prod"]
     restart: unless-stopped
     environment:

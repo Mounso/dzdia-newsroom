@@ -4,6 +4,7 @@
 - **Date:** 2026-10-27
 - **Deciders:** Abdou (author), with Claude as reviewer
 - **Related:** [ADR-0004](0004-runtime-foundation.md) (builds on it), [ADR-0005](0005-telegram-ingress.md)
+- **Amended (2026-10-28, design review S1 and S2):** the build stage is now `python:3.12.x-slim-bookworm` with the uv binary copied from a pinned `ghcr.io/astral-sh/uv` image, so both stages share the exact same Python; every image is pinned by tag and digest. The CI builds the image for amd64 and arm64 without pushing it (no registry, so the rejected GHCR option below still stands). See [conventions](../development/conventions.md#dependencies-and-supply-chain).
 
 ## Context
 
