@@ -9,11 +9,14 @@ from pathlib import Path
 
 from psycopg import AsyncConnection
 
+from dzdia_newsroom.logging_setup import configure_logging
+from dzdia_newsroom.runtime import event_loop_factory
+
 MIGRATIONS_DIR = Path(__file__).parent / "migrations"
 # Arbitrary constant: serializes concurrent migration runs (e.g. two containers starting together).
 _ADVISORY_LOCK_ID = 7_302_001
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("dzdia_newsroom.db.migrate")  # not __name__, "__main__" under -m
 
 
 async def apply_migrations(conn: AsyncConnection, directory: Path = MIGRATIONS_DIR) -> list[str]:
@@ -21,12 +24,13 @@ async def apply_migrations(conn: AsyncConnection, directory: Path = MIGRATIONS_D
     so that each file runs in its own transaction."""
     if not conn.autocommit:
         raise ValueError("apply_migrations needs an autocommit connection")
-    await conn.execute(
-        "CREATE TABLE IF NOT EXISTS schema_migrations ("
-        " version text PRIMARY KEY, applied_at timestamptz NOT NULL DEFAULT now())"
-    )
+    # Lock first: two concurrent `CREATE TABLE IF NOT EXISTS` can still collide in Postgres.
     await conn.execute("SELECT pg_advisory_lock(%s)", (_ADVISORY_LOCK_ID,))
     try:
+        await conn.execute(
+            "CREATE TABLE IF NOT EXISTS schema_migrations ("
+            " version text PRIMARY KEY, applied_at timestamptz NOT NULL DEFAULT now())"
+        )
         cursor = await conn.execute("SELECT version FROM schema_migrations")
         applied = {version for (version,) in await cursor.fetchall()}
         newly_applied: list[str] = []
@@ -55,6 +59,13 @@ async def _main() -> None:
     print(f"Applied {len(versions)} migration(s): {', '.join(versions) or 'none'}")
 
 
+def main() -> None:
+    from dzdia_newsroom.config import LoggingSettings
+
+    logging_settings = LoggingSettings()
+    configure_logging(logging_settings.log_format, logging_settings.log_level)
+    asyncio.run(_main(), loop_factory=event_loop_factory())
+
+
 if __name__ == "__main__":
-    logging.basicConfig(level=logging.INFO)
-    asyncio.run(_main())
+    main()

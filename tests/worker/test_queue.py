@@ -52,11 +52,11 @@ class FakeStore:
 
     async def retry_later(self, job: ClaimedJob, delay_s: float, error: str) -> bool:
         self.retried.append((job.id, delay_s, error))
-        return True
+        return self.lease_kept
 
     async def mark_dead(self, job: ClaimedJob, error: str) -> bool:
         self.dead.append((job.id, error))
-        return True
+        return self.lease_kept
 
 
 def worker(store: FakeStore, handlers: dict[str, Handler]) -> Worker:
@@ -119,6 +119,17 @@ async def test_failure_on_last_attempt_is_dead() -> None:
     store = FakeStore(jobs=[make_job(attempts=3, max_attempts=3)])
     await worker(store, {"echo": failing_handler}).run_once()
     assert store.dead == [(1, "ConnectionError: provider down")] and not store.retried
+
+
+@pytest.mark.parametrize("attempts", [1, 3])
+async def test_failure_after_lease_loss_is_not_logged_as_handled(
+    attempts: int, caplog: pytest.LogCaptureFixture
+) -> None:
+    # The job was reclaimed by another worker meanwhile: our retry/dead update matched no row.
+    store = FakeStore(jobs=[make_job(attempts=attempts, max_attempts=3)], lease_kept=False)
+    await worker(store, {"echo": failing_handler}).run_once()
+    assert "lease lost" in caplog.text and "retry in" not in caplog.text
+    assert all(record.levelname != "ERROR" for record in caplog.records)  # no "dead" claim
 
 
 async def test_permanent_error_is_dead_without_retry() -> None:

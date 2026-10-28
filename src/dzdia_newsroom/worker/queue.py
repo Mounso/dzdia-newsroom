@@ -115,21 +115,18 @@ class Worker:
         log_ctx = f"job {job.id} ({job.kind}, attempt {job.attempts}/{job.max_attempts})"
         if job.attempts > job.max_attempts:
             # Only reachable when the lease of the last attempt expired (worker crash).
-            await self._store.mark_dead(job, "lease expired during the last attempt")
-            logger.error("%s: dead, lease expired during the last attempt", log_ctx)
+            await self._mark_dead(job, "lease expired during the last attempt", log_ctx)
             return
         handler = self._handlers.get(job.kind)
         if handler is None:
-            await self._store.mark_dead(job, f"no handler for kind {job.kind!r}")
-            logger.error("%s: dead, no handler", log_ctx)
+            await self._mark_dead(job, f"no handler for kind {job.kind!r}", log_ctx)
             return
 
         started = time.perf_counter()
         try:
             kept_lease = await self._run_with_heartbeat(job, handler)
         except PermanentJobError as exc:
-            await self._store.mark_dead(job, _describe(exc))
-            logger.error("%s: dead, permanent error: %s", log_ctx, exc)
+            await self._mark_dead(job, _describe(exc), log_ctx)
             return
         except Exception as exc:
             await self._fail(job, exc, log_ctx)
@@ -145,8 +142,7 @@ class Worker:
 
     async def _fail(self, job: ClaimedJob, exc: Exception, log_ctx: str) -> None:
         if job.attempts >= job.max_attempts:
-            await self._store.mark_dead(job, _describe(exc))
-            logger.error("%s: dead after the last attempt: %s", log_ctx, _describe(exc))
+            await self._mark_dead(job, _describe(exc), log_ctx)
             return
         delay = retry_delay_s(
             job.attempts,
@@ -154,8 +150,18 @@ class Worker:
             cap_s=self._config.retry_cap_s,
             rand=self._rand,
         )
-        await self._store.retry_later(job, delay, _describe(exc))
-        logger.warning("%s: failed (%s), retry in %.1f s", log_ctx, _describe(exc), delay)
+        error = _describe(exc)
+        if await self._store.retry_later(job, delay, error):
+            logger.warning("%s: failed (%s), retry in %.1f s", log_ctx, error, delay)
+        else:
+            logger.warning("%s: failed (%s), lease lost: retry left to its owner", log_ctx, error)
+
+    async def _mark_dead(self, job: ClaimedJob, reason: str, log_ctx: str) -> None:
+        # A False return means another worker reclaimed the job: the row is no longer ours.
+        if await self._store.mark_dead(job, reason):
+            logger.error("%s: dead (%s)", log_ctx, reason)
+        else:
+            logger.warning("%s: lease lost before it could be marked dead (%s)", log_ctx, reason)
 
     async def _run_with_heartbeat(self, job: ClaimedJob, handler: Handler) -> bool:
         """Run the handler while renewing the lease. Returns False (handler cancelled) when the

@@ -19,6 +19,9 @@ async def open_pool(
         min_size=1,
         max_size=max_size,
         timeout=timeout_s,
+        # Test each connection on checkout: after a Postgres restart, pooled connections are
+        # dead and would fail the first request; the check replaces them instead.
+        check=AsyncConnectionPool.check_connection,
         kwargs={"autocommit": True, "connect_timeout": int(timeout_s)},
         open=False,
     ) as pool:
