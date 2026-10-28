@@ -28,7 +28,7 @@
 
 # Mentorship rules
 - Explain in French; code, identifiers, comments and docstrings in English.
-- Before a new module: ask me 3-4 architecture questions, then record the decision in `docs/architecture_decisions.md`.
+- Before a new module: ask me 3-4 architecture questions, then record the decision as a new ADR in `docs/adr/` (template and index: `docs/adr/README.md`).
 - For core functions: present 2-3 options with trade-offs and let me choose before writing.
 - Do not write the kata topics for me (agent loop core, RRF, structured-output retry, recall@k/MRR, kappa, SSRF guard) unless I ask for the comparison.
 - When debugging: list root causes by probability and wait for my go before editing.
@@ -42,4 +42,5 @@
 # Read only when needed
 - `docs/SPEC.md`: active feature spec (not created yet).
 - `Refactorisation DzdiaBot v2.1.md`: full product spec, target architecture and roadmap.
-- `docs/architecture_decisions.md`: past decisions.
+- `docs/adr/`: past decisions, one file per ADR (in English).
+- `docs/README.md`: documentation index (architecture, operations, development, evals). Keep docs in sync when behavior changes.
