@@ -120,7 +120,7 @@ Strengths worth keeping: constant-time secret comparison; fail-closed allowlist;
 
 ## 6. Remediation plan
 
-1. ~~**Quick fixes** (no design choice): B2, B3, B4, R2.~~ Done on 2026-10-28.
+1. ~~**Quick fixes** (no design choice): B2, B3, B4, R2.~~ Done on 2026-10-28 (commit `dbd3e51`).
 2. **B1 and R1:** retries guided by `retry_after`, and releasing jobs on shutdown. Options to be compared first.
 3. **Evals:** B5, B6 and the extraction timestamp, before running `extract` again.
 4. **CI and supply chain:** S1, S2 and coverage measurement.

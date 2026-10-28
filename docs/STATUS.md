@@ -1,15 +1,27 @@
-# Statut — 2026-10-28 (fin de session : semaine 1 terminée côté code)
+# Statut — 2026-10-28 (audit, lot rapide de corrections et documentation faits)
 
 ## Pour reprendre dans une nouvelle session
-- **Par où commencer :** lire ce fichier, puis attaquer l'étape 2 des « Prochaines étapes » (le déploiement sur la VM). Comme c'est un nouveau module, commencer par poser 3 ou 4 questions d'architecture à Abdou, puis écrire l'**ADR-007**. Pistes de questions : sauvegardes `pg_dump` (fréquence, destination, rétention), procédure de déploiement (`git pull` puis `compose up --build`, ou un script), pare-feu (règles de sécurité Oracle et ufw, ports 22, 80 et 443 seulement) et accès SSH (clé seule, utilisateur non-root), DuckDNS en attendant `bot.dzdia.com`.
-- **Dernier commit de code :** `18780b4 Add Docker image, compose stack and Caddy entry point (ADR-006)`, suivi du commit de passation qui met ce fichier à jour. `main` est poussée et l’arbre de travail est propre. Les ADR 001 à 006 sont acceptés.
+- **Session du 2026-10-28 :**
+  - **Audit complet :** voir `docs/reviews/2026-10-28-design-review.md`. Chaque point a un identifiant et un statut.
+  - **Lot rapide corrigé :** B2, B3, B4 et R2.
+  - **Documentation professionnelle en anglais :** index dans `docs/README.md`.
+  - **ADR :** ils sont maintenant **un fichier par décision** dans `docs/adr/` (format MADR, modèle `template.md`, index dans `README.md`). `docs/architecture_decisions.md` est supprimé ; les originaux en français restent dans l'historique Git (commit `8e32200`). Le **prochain ADR est `docs/adr/0007-…md`**, en anglais. Il faut l'ajouter à l'index.
+  - **Règle :** quand un comportement change, mettre à jour la doc concernée et le statut du point dans la revue de conception.
+  - **Tout est commité et poussé sur `main`** (voir « Dernier commit » ci-dessous).
+- **Par où commencer :** lire ce fichier, puis les correctifs restants de l'audit (voir « Prochaines étapes »), puis attaquer l'étape 2 des « Prochaines étapes » (le déploiement sur la VM). Comme c'est un nouveau module, commencer par poser 3 ou 4 questions d'architecture à Abdou, puis écrire l'**ADR-0007** (`docs/adr/0007-…md`). Pistes de questions : sauvegardes `pg_dump` (fréquence, destination, rétention), procédure de déploiement (`git pull` puis `compose up --build`, ou un script), pare-feu (règles de sécurité Oracle et ufw, ports 22, 80 et 443 seulement) et accès SSH (clé seule, utilisateur non-root), DuckDNS en attendant `bot.dzdia.com`.
+- **Derniers commits :**
+  - `dbd3e51` : le lot rapide de l'audit (B2, B3, B4, R2) ;
+  - `b58dbc9` : la documentation et le découpage des ADR ;
+  - un commit de passation, qui met à jour ce fichier.
+
+  `main` est poussée et l’arbre de travail est propre. Les ADR 0001 à 0006 sont acceptés.
 - **Dépôt GitHub :** `origin` = https://github.com/Mounso/dzdia-newsroom. Tout est sur `main` (la branche `feat/postgres-job-queue` y a été fusionnée en avance rapide). Le 2026-10-27, l'historique a été réécrit et poussé en force pour retirer les mentions de co-auteur : **aucun commit ne porte de ligne `Co-Authored-By`**, et il ne faut pas en ajouter.
-- **CI :** verte sur le commit `3a2a5f3`, test de bout en bout compris (vérifiée par Abdou dans l'onglet Actions). Pour `18780b4`, ce n'est pas vérifié : demander à Abdou. Claude ne peut pas la lire : `gh` n'est pas installé et le dépôt n'est pas lisible par l'API publique.
+- **CI :** verte sur le commit `3a2a5f3`, test de bout en bout compris (vérifiée par Abdou dans l'onglet Actions). Pour `18780b4` et les commits du 2026-10-28, ce n'est pas vérifié : demander à Abdou. Claude ne peut pas la lire : `gh` n'est pas installé et le dépôt n'est pas lisible par l'API publique.
 - **Fichiers locaux, jamais commités** (exclus via `.git/info/exclude`) :
   - `Refactorisation DzdiaBot v2.1.md` : le cahier des charges complet (périmètre, architecture cible, feuille de route, questions de découverte) ;
   - `docs/fiche_de_suivi.md` : la fiche de préparation aux entretiens d'Abdou. **La mettre à jour à la fin de chaque étape**, en même temps que ce fichier.
-- **Environnement :** Windows 11, avec WSL (Ubuntu) et Docker Desktop installés le 2026-10-27. Les tests Postgres tournent dans un conteneur Linux (commande dans `CLAUDE.md`), car psycopg en async ne fonctionne pas avec la boucle asyncio par défaut de Windows. **Docker Desktop doit être lancé** avant toute commande `docker` (il ne l'était pas à la fin de la session).
-- **Vérifications :** ruff, `ruff format` et mypy strict ne signalent rien. Sous Windows, 114 tests passent et 11 sont sautés (les tests Postgres). Dans Docker, les 125 passent.
+- **Environnement :** Windows 11, avec WSL (Ubuntu) et Docker Desktop installés le 2026-10-27. Les tests Postgres tournent dans un conteneur Linux (commande dans `CLAUDE.md`), car psycopg en async ne fonctionne pas avec la boucle asyncio par défaut de Windows. **Docker Desktop doit être lancé** avant toute commande `docker`. S'il ne l'est pas, Claude peut le démarrer avec `Start-Process` sur `Docker Desktop.exe`, puis attendre que `docker info` réponde.
+- **Vérifications (2026-10-28, après le lot rapide) :** ruff, `ruff format` et mypy strict ne signalent rien. Sous Windows, 116 tests passent et 11 sont sautés (les tests Postgres). Dans Docker, les 127 passent. Docker Desktop est installé dans `C:\Users\abdou\AppData\Local\Programs\DockerDesktop\`.
 - **`.env.example` est illisible pour Claude** (règle de `.claude/settings.json`). Abdou doit y ajouter lui-même les nouvelles variables (voir les étapes 8 et 9 ci-dessous).
 - **`.env` d'Abdou :** il contient un token de bot de dev (actif) et un token de bot de prod (en commentaire), `POSTGRES_PASSWORD`, `TELEGRAM_WEBHOOK_SECRET` et `TELEGRAM_ALLOWED_USER_IDS` (son identifiant Telegram : `5271201903`). Claude ne lit jamais `.env` ; pour vérifier une variable non secrète, utiliser `docker inspect` sur le conteneur concerné.
 
@@ -44,6 +56,21 @@
    - **validé avec le vrai bot de dev** (profil `dev`, tunnel cloudflared, `set-webhook`) : Abdou a reçu « Bien reçu. ». Le job est passé de `queued` à `done` en 149 ms, dont 139 ms pour `sendMessage`. Les deux premiers messages avaient été refusés, car `TELEGRAM_ALLOWED_USER_IDS` valait encore l'exemple `123` : la liste blanche a fait son travail ;
    - test de fumée avec des variables factices (projet `dzdia-smoke`, supprimé ensuite) : migration, healthchecks, webhook 200/401, job traité, l'API n'a pas le token, utilisateur `app` (uid 10001), arrêt du worker en 1 s avec le code 0 ; via Caddy : `/health` passe, `/docs` et `/` donnent 404, un corps de 2 Mo est refusé (413) ; `telegram-cli` atteint bien Telegram.
 
+10. **Audit et lot rapide** (2026-10-28), détails dans `docs/reviews/2026-10-28-design-review.md` :
+    - **B2 :** `db.migrate` utilise `event_loop_factory()` et `configure_logging`. Il plantait sous Windows (vérifié).
+    - **B3 :** le verrou consultatif est pris avant le `CREATE TABLE schema_migrations`.
+    - **B4 :** `Worker._mark_dead` et `_fail` vérifient le booléen renvoyé par la mise à jour clôturée. Nouveau test.
+    - **R2 :** `check=AsyncConnectionPool.check_connection` dans `db/pool.py`.
+11. **Documentation** (2026-10-28) :
+    - `README.md` refait ;
+    - `docs/architecture/` (overview, job-queue, data-model, security) ;
+    - `docs/adr/` ;
+    - `docs/operations/` (configuration, deployment, runbook) ;
+    - `docs/development/` (getting-started, testing, conventions) ;
+    - `docs/evals/baseline-v1.md`, `docs/roadmap.md`, `docs/reviews/`.
+
+    Tous les liens internes ont été vérifiés par un script.
+
 ## En pause : étape `extract`
 - **État :** 20/144 extractions faites avec `gemini-2.5-flash`. Les 124 autres ont pris des 429 : le free tier est limité à 5 requêtes par minute et 20 par jour. `match` n'est pas lancé.
 - **Modèle écarté :** `gemini-3.5-flash-lite`, testé sur les 20 mêmes runs (sorties dans `evals/.data/baseline_v1/compare_gemini-3.5-flash-lite/`). Il retrouve 76 % des éléments distincts, mais seulement 2 citations sur 7 et 8 organisations sur 16 : il sous-estimerait les hallucinations. Le modèle évalué (3.1 Flash Lite) est écarté aussi, à cause du biais d'auto-évaluation.
@@ -54,9 +81,16 @@
   - relancer `extract` une fois par jour sur le free tier, soit environ 7 jours.
 
   Si on change de modèle : questions d'architecture, nouvel ADR, puis on refait les **144** extractions avec un seul modèle. Le script de comparaison est à réécrire, car il était dans un scratchpad.
-- **À corriger :** le retry de `GeminiClient` ignore le `retryDelay` des 429, et rien ne limite le débit par minute.
+- **À corriger avant de relancer :**
+  - **B5 :** les identifiants d'éléments dépendent de leur position ; ajouter aussi une date à `ExtractionRecord`.
+  - **B6 :** le taux par sortie est une borne basse tant que des éléments sont en attente.
+  - **R8 :** le retry de `GeminiClient` ignore `retryDelay`, et rien ne limite le débit.
 
 ## Prochaines étapes, dans l'ordre
+0. **Correctifs restants de l'audit.** Ce sont des fonctions cœur : présenter 2 ou 3 options à Abdou avant de coder.
+   - **B1 :** le `retry_after` de Telegram doit être transmis à la file.
+   - **R1 :** rendre le job à la file quand le worker s'arrête.
+   - Ensuite B5 et B6 (évals), puis S1, S2 et la couverture de tests en CI.
 1. **Avant tout :** l'échange de découverte avec les journalistes (§9 du cahier des charges). Questions à ajouter :
    - un sous-domaine de dzdia.com pour le webhook (par exemple `bot.dzdia.com`) ;
    - l'identifiant du groupe Telegram de l'équipe ;
