@@ -1,11 +1,8 @@
-# Statut — 2026-10-28 (fin de session : audit, documentation, B1, R1 et B5 faits)
+# Statut — 2026-10-28 (audit, documentation, B1, R1, B5 et B6 faits)
 
 ## Pour reprendre dans une nouvelle session
-- **Première chose à faire : présenter à Abdou 2 ou 3 options pour B6**, en français, avec les compromis, puis attendre son choix avant de coder (règle des fonctions cœur).
-  - **Le problème :** dans `evals/baseline_v1/report.py`, `group_stats` calcule `output_rate` sur tous les runs. Un run dont des éléments sont encore « en attente » d'étiquette compte comme un run sans élément non étayé. Le taux est donc une borne basse tant que l'étiquetage n'est pas fini.
-  - **Pistes déjà notées dans la revue :** exclure du dénominateur les runs qui ont des éléments en attente, ou présenter le chiffre comme une borne basse. On peut aussi donner les deux bornes (en attente compté comme étayé, puis comme non étayé). Le nombre de runs exclus ou en attente doit apparaître dans le rapport.
-  - **Fichiers :** `evals/baseline_v1/report.py` (`group_stats`, `GroupStats`, rendu du rapport), `tests/evals/test_report.py`, `docs/evals/baseline-v1.md` (limites connues), revue de conception (B6).
-- **Ensuite, dans l'ordre :** S1 et S2 (épinglage des images et des actions GitHub, `docker build` et `pip-audit` en CI), puis la couverture de tests en CI. Puis le déploiement sur la VM : c'est un nouveau module, donc 3 ou 4 questions d'architecture à Abdou, puis l'**ADR-0007** (`docs/adr/0007-…md`, en anglais, à ajouter à l'index `docs/adr/README.md`). Pistes de questions : sauvegardes `pg_dump` (fréquence, destination, rétention), procédure de déploiement (`git pull` puis `compose up --build`, ou un script), pare-feu (règles de sécurité Oracle et ufw, ports 22, 80 et 443 seulement), accès SSH (clé seule, utilisateur non-root), DuckDNS en attendant `bot.dzdia.com`.
+- **B6 est fait, commité et poussé** (option B, bornes de Manski). La CI de ce commit n'est pas encore vérifiée : demander à Abdou.
+- **Ensuite, dans l'ordre :** S1 et S2 (épinglage des images et des actions GitHub, `docker build` et `pip-audit` en CI ; options à présenter d'abord), puis la couverture de tests en CI. Puis le déploiement sur la VM : c'est un nouveau module, donc 3 ou 4 questions d'architecture à Abdou, puis l'**ADR-0007** (`docs/adr/0007-…md`, en anglais, à ajouter à l'index `docs/adr/README.md`). Pistes de questions : sauvegardes `pg_dump` (fréquence, destination, rétention), procédure de déploiement (`git pull` puis `compose up --build`, ou un script), pare-feu (règles de sécurité Oracle et ufw, ports 22, 80 et 443 seulement), accès SSH (clé seule, utilisateur non-root), DuckDNS en attendant `bot.dzdia.com`.
 - **Méthode de travail validée par Abdou** (à suivre à chaque étape) :
   1. options présentées en tableau (principe, pour, contre), une recommandation, et les petits choix à part ; Abdou répond en général « A + mes choix » ;
   2. code et tests, puis ruff, `ruff format`, mypy strict et pytest sous Windows, puis la suite Postgres dans Docker (procédure dans `CLAUDE.md`, en arrière-plan) ;
@@ -17,7 +14,7 @@
   - `caplog` ne capture pas le niveau INFO par défaut : `caplog.set_level(logging.INFO, logger=...)` ;
   - le hook de formatage retire un import ajouté avant son premier usage : ajouter l'usage d'abord, ou vérifier les imports après coup.
 - **Sessions du 2026-10-28 :**
-  - **Audit complet :** `docs/reviews/2026-10-28-design-review.md`. Chaque point a un identifiant et un statut. Corrigés : B1, B2, B3, B4, B5, R1, R2. Ouverts : B6, B7, R3, R7, R9, R11, S1, S2, S5, S6 ; S4 documenté ; prévus plus tard : R4, R5, R6, R8, R10, S3, et les questions d'architecture A1 à A5 (semaine 2).
+  - **Audit complet :** `docs/reviews/2026-10-28-design-review.md`. Chaque point a un identifiant et un statut. Corrigés : B1, B2, B3, B4, B5, B6, R1, R2. Ouverts : B7, R3, R7, R9, R11, S1, S2, S5, S6 ; S4 documenté ; prévus plus tard : R4, R5, R6, R8, R10, S3, et les questions d'architecture A1 à A5 (semaine 2).
   - **Documentation professionnelle en anglais :** index dans `docs/README.md`. Les ADR sont **un fichier par décision** dans `docs/adr/` (format MADR, modèle `template.md`). Les originaux en français restent dans l'historique Git (commit `8e32200`). Les ADR 0001 à 0006 sont acceptés.
   - **Règle :** quand un comportement change, mettre à jour la doc concernée et le statut du point dans la revue de conception.
 - **Derniers commits, tous poussés sur `main` :**
@@ -26,9 +23,10 @@
   - `1152c3f` : une passation ;
   - `6ed8199` : B1 et R1 ;
   - `debd2fc` : B5 ;
-  - un dernier commit de passation, qui met à jour ce fichier.
+  - `e5d612d` : une passation, qui met à jour ce fichier.
 
-  L'arbre de travail est propre.
+  Le dernier commit porte B6 (« Report eval rates as bounds while labels are pending »). L'arbre de travail est propre.
+
 - **Dépôt GitHub :** `origin` = https://github.com/Mounso/dzdia-newsroom. Tout est sur `main`. Le 2026-10-27, l'historique a été réécrit et poussé en force pour retirer les mentions de co-auteur : **aucun commit ne porte de ligne `Co-Authored-By`**, et il ne faut pas en ajouter.
 - **CI :** verte jusqu'à `debd2fc` inclus, test de bout en bout compris (vérifiée par Abdou dans l'onglet Actions le 2026-10-28). Pour le commit de passation, elle n'est pas vérifiée, mais il ne touche que de la doc. Claude ne peut pas la lire : `gh` n'est pas installé et le dépôt n'est pas lisible par l'API publique.
 - **Fichiers locaux, jamais commités** (exclus via `.git/info/exclude`) :
@@ -36,7 +34,7 @@
   - `docs/fiche_de_suivi.md` : la fiche de préparation aux entretiens d'Abdou. **La mettre à jour à la fin de chaque étape**, en même temps que ce fichier ;
   - `evals/.data/` (ignoré par Git) : copies des articles, `runs.jsonl`, et dans `pre_b5/` les 20 extractions mises de côté par B5.
 - **Environnement :** Windows 11, avec WSL (Ubuntu) et Docker Desktop. Les tests Postgres tournent dans un conteneur Linux (commande dans `CLAUDE.md`), car psycopg en async ne fonctionne pas avec la boucle asyncio par défaut de Windows. **Docker Desktop doit être lancé** avant toute commande `docker`. S'il ne l'est pas, Claude peut le démarrer avec `Start-Process` sur `C:\Users\abdou\AppData\Local\Programs\DockerDesktop\Docker Desktop.exe`, puis attendre que `docker info` réponde.
-- **Vérifications (2026-10-28, après B5) :** ruff, `ruff format` et mypy strict ne signalent rien. Sous Windows, 129 tests passent et 13 sont sautés (les tests Postgres). Dans Docker, les 142 passent (dont les tests Postgres).
+- **Vérifications (2026-10-28, après B6) :** ruff, `ruff format` et mypy strict ne signalent rien. Sous Windows, 132 tests passent et 13 sont sautés (les tests Postgres). Dans Docker, les 145 passent (dont les tests Postgres).
 - **`.env.example` est illisible pour Claude** (règle de `.claude/settings.json`). Abdou doit y ajouter lui-même les nouvelles variables (voir les étapes 8 et 9 ci-dessous).
 - **`.env` d'Abdou :** il contient un token de bot de dev (actif) et un token de bot de prod (en commentaire), `POSTGRES_PASSWORD`, `TELEGRAM_WEBHOOK_SECRET` et `TELEGRAM_ALLOWED_USER_IDS` (son identifiant Telegram : `5271201903`). Claude ne lit jamais `.env` ; pour vérifier une variable non secrète, utiliser `docker inspect` sur le conteneur concerné.
 
@@ -95,6 +93,13 @@
     - `ExtractionRecord` a maintenant `created_at` (obligatoire) et `latency_ms`. Les tokens viendront avec R8.
     - **Options écartées :** une empreinte dans `HumanLabel` (détecte sans prévenir), et des identifiants liés à une extraction (toute réextraction annule les étiquettes).
     - 5 nouveaux tests, 2 tests adaptés. Doc mise à jour : `docs/evals/baseline-v1.md`, roadmap, revue de conception (B5 `Fixed`).
+14. **B6** (2026-10-28, option B) :
+    - les éléments en attente sont tous des `not_found`, donc pas manquants au hasard. Le taux par élément et le taux par sortie sont maintenant des **bornes de Manski** dans `evals/baseline_v1/report.py` (`RateBounds`, `_rate_bounds`, `_fmt_bounds`) : attente comptée comme étayée (basse), puis comme non étayée (haute). Elles se rejoignent quand tout est étiqueté ;
+    - une sortie est « indéterminée » seulement si elle a des éléments en attente et aucun non étayé (`GroupStats.undetermined_runs`) ;
+    - IC affiché : du bas de l'IC de la borne basse au haut de l'IC de la borne haute (bootstraps appariés) ;
+    - le rapport gagne une colonne « Undetermined outputs », le nombre en attente dans le tableau par type, et un bandeau « Provisional report » tant qu'il reste de l'attente. Le taux de contradictions et les taux par type restent sur les éléments tranchés ;
+    - **options écartées :** (A) exclure les sorties indéterminées (toujours biaisé) ; (C) un seul chiffre présenté comme une borne basse ;
+    - 3 nouveaux tests, 2 tests adaptés. Doc mise à jour : `docs/evals/baseline-v1.md` (méthode et limites), roadmap, revue de conception (B6 `Fixed`).
 
 ## En pause : étape `extract`
 - **État :** 0/144. Les 20 extractions faites avec `gemini-2.5-flash` (les 124 autres avaient pris des 429 : le free tier est limité à 5 requêtes par minute et 20 par jour) n'avaient pas de date. Elles ont été déplacées dans `evals/.data/baseline_v1/pre_b5/` (local, rien de supprimé), et `extract` repartira de zéro. `match` n'est pas lancé.
@@ -107,11 +112,10 @@
 
   Si on change de modèle : questions d'architecture, nouvel ADR, puis on refait les **144** extractions avec un seul modèle. Le script de comparaison est à réécrire, car il était dans un scratchpad.
 - **À corriger avant de relancer :**
-  - **B6 :** le taux par sortie est une borne basse tant que des éléments sont en attente.
   - **R8 :** le retry de `GeminiClient` ignore `retryDelay`, et rien ne limite le débit.
 
 ## Prochaines étapes, dans l'ordre
-0. **Correctifs restants de l'audit :** B6 (évals ; options à présenter d'abord, voir en haut), puis S1, S2 et la couverture de tests en CI. B1, R1 et B5 sont faits.
+0. **Correctifs restants de l'audit :** S1, S2 et la couverture de tests en CI (options à présenter d'abord). B1, R1, B5 et B6 sont faits.
 1. **Avant tout :** l'échange de découverte avec les journalistes (§9 du cahier des charges). Questions à ajouter :
    - un sous-domaine de dzdia.com pour le webhook (par exemple `bot.dzdia.com`) ;
    - l'identifiant du groupe Telegram de l'équipe ;

@@ -23,6 +23,6 @@ Where the project stands and what comes next. The plan follows the product spec 
 
 1. Discovery session with the journalists: briefing sources, a `dzdia.com` subdomain for the webhook, the team group id, journalists' Telegram ids.
 2. Deploy on the Oracle Cloud Ampere VM (ADR-0007: backups, firewall, SSH, DNS).
-3. Resume the baseline: choose the extractor model, fix B6, then `extract` (all 144 runs), `match`, labeling and `report`.
+3. Resume the baseline: choose the extractor model, then `extract` (all 144 runs), `match`, labeling and `report`.
 4. Remaining fixes from the [design review](reviews/2026-10-28-design-review.md): CI and supply chain (S1, S2, coverage).
 5. Week 2 ADRs: LLM package, effects ledger, workflow state, worker concurrency, log correlation.

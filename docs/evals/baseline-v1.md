@@ -22,6 +22,7 @@ v1 sends the raw URL to the model and never downloads the page. How much of what
 | Model | v1 prompts copied verbatim (`v1-frozen`) with v1's model, `gemini-3.1-flash-lite-preview`, default parameters. |
 | Labels | `SUPPORTED`, `CONTRADICTED`, `NOT_IN_SOURCE`, assigned by a human against the reference text. |
 | Uncertainty | 95 % confidence intervals from a **cluster bootstrap over articles**: elements of one article are not independent, so articles are resampled, not elements. |
+| Pending labels | Elements that are `not_found` and not yet labeled are **pending**. They are not missing at random (they are the likeliest to be unsupported), so the element and output rates are reported as **worst-case bounds** until labeling is complete: pending counted as supported, then as unsupported. The report flags itself as provisional and counts pending elements and undetermined outputs. |
 
 ## Pipeline
 
@@ -72,7 +73,8 @@ Every step is idempotent and resumable: records carry deterministic ids and re-r
 - **Extractor recall.** Elements the extractor misses are invisible to the metrics. The human labeler checks the extracted list while labeling.
 - **Extractor choice.** The model under test cannot extract its own elements (self-evaluation bias). A lighter model tested on 20 runs found 76 % of distinct elements but only 2 of 7 quotes and 8 of 16 organizations, so it would underestimate hallucinations; it was rejected. All 144 extractions will be redone with a single model once it is chosen.
 - **Matcher false positives.** An element can be "found" in a different context than the one stated. The 20 % audit sample measures this.
-- **Open issues in the harness** (from the [design review](../reviews/2026-10-28-design-review.md)): the output-level rate is a lower bound while elements are pending (B6); two adjacent numbers can be read as one (B7).
+- **Provisional figures while labeling.** Until every pending element is labeled, the element and output rates are ranges, and the contradicted and per-type rates cover decided elements only ([B6](../reviews/2026-10-28-design-review.md#b6--output-level-rate-is-a-lower-bound-while-labels-are-pending)). Only a report without the "Provisional report" banner gives final numbers.
+- **Open issue in the harness** (from the [design review](../reviews/2026-10-28-design-review.md)): two adjacent numbers can be read as one (B7).
 
 ## Reproducing
 

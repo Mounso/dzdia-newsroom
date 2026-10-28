@@ -25,7 +25,7 @@ Status: **Fixed** (with the change that fixed it), **Open**, or **Planned** (sch
 | B3 | Low | `CREATE TABLE IF NOT EXISTS schema_migrations` ran before the advisory lock; two concurrent runners could collide on `pg_type`. | Fixed |
 | B4 | Low | The worker ignored the result of `retry_later` and `mark_dead`, and logged "retry in N s" or "dead" even when its lease was lost and the row unchanged. | Fixed |
 | B5 | Medium (latent) | Eval element ids depend on position in the extractor output. | Fixed |
-| B6 | Low | The output-level rate in the eval report is biased low while elements are pending. | Open |
+| B6 | Low | The output-level rate in the eval report is biased low while elements are pending. | Fixed |
 | B7 | Low | The number regex of the matcher merges two adjacent numbers. | Open |
 
 ### B1 — A long Telegram 429 loses the message
@@ -55,7 +55,9 @@ Status: **Fixed** (with the change that fixed it), **Open**, or **Planned** (sch
 
 - **Where:** [`evals/baseline_v1/report.py`](../../evals/baseline_v1/report.py), `output_rate`.
 - **What happens:** an output whose elements are still pending counts as an output with no unsupported element. The bias disappears once every `not_found` element is labeled.
-- **Fix direction:** exclude outputs with pending elements, or label the figure as a lower bound.
+- **Same cause, wider than the finding:** the element-level rate dropped pending elements from its denominator. Pending elements are all `not_found`, the ones most likely to be unsupported, so they are not missing at random and dropping them biased that rate low as well.
+- **Fix (option B of three, chosen by Abdou):** worst-case (Manski) bounds for the element and output rates: pending counted as supported (low bound), then as unsupported (high bound). The bounds need no assumption about the pending elements and meet once labeling is complete, so the final report shows a single estimate as before. While they differ, the cell reads `low–high [CI]`, where the CI runs from the lower end of the low bound's interval to the upper end of the high bound's; both bootstraps use the same resamples. An output is *undetermined* only if it has pending elements and no unsupported one yet: one unsupported element decides it whatever the rest turn out to be. The report gains an "Undetermined outputs" column, a pending count in the per-type table, and a "Provisional report" banner while anything is pending. The contradicted rate and the per-type rates stay over decided elements, with their pending counts shown, since a "pending = contradicted" bound means nothing. Covered by `test_report.py`.
+- **Options set aside:** (A) exclude undetermined outputs from the denominator: still biased, because the excluded outputs are the ones most likely to be positive, and the denominator shrinks silently. (C) keep one number and present it as a lower bound: half the information of B for nearly the same code.
 
 ### B7 — Adjacent numbers merged
 
@@ -125,6 +127,6 @@ Strengths worth keeping: constant-time secret comparison; fail-closed allowlist;
 
 1. ~~**Quick fixes** (no design choice): B2, B3, B4, R2.~~ Done on 2026-10-28 (commit `dbd3e51`).
 2. ~~**B1 and R1:** retries guided by `retry_after`, and releasing jobs on shutdown.~~ Done on 2026-10-28 (option A for both).
-3. **Evals:** ~~B5 and the extraction timestamp~~ (done on 2026-10-28, option A), then B6, before running `extract` again.
+3. ~~**Evals:** B5 and the extraction timestamp, then B6, before running `extract` again.~~ Done on 2026-10-28 (option A for B5, option B for B6).
 4. **CI and supply chain:** S1, S2 and coverage measurement.
 5. **Week 2 (ADRs):** A1 to A5, R4, R5, R6, R8, R10.
