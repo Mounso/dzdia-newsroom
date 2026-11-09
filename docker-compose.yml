@@ -99,7 +99,7 @@ services:
   # Dev only: a public HTTPS URL for the webhook, without an account. The URL changes on every
   # start: read it with `docker compose logs cloudflared`, then run `set-webhook` again.
   cloudflared:
-    image: cloudflare/cloudflared:2026.10.5@sha256:1b1d34d0a9c0bfca9de72db8460d328db3f19edd2b96169114e3e893a97bbe53
+    image: cloudflare/cloudflared:2026.10.7@sha256:4955524aeaa379e154023d5a027c250f7b35041a2e7e950cf13f144bc9b9c5ba
     profiles: ["dev"]
     restart: unless-stopped
     command: ["tunnel", "--no-autoupdate", "--url", "http://api:8000"]
@@ -110,7 +110,7 @@ services:
 
   # Prod only: the single public entry point, with automatic Let's Encrypt certificates.
   caddy:
-    image: caddy:2.11.7@sha256:5e5286cb37d44086d651a5363f05f43a692ce4d649d88fb1bd844579f45fa9e8
+    image: caddy:2.11.9@sha256:0c2243efcf437ab7f7a978f1027fcf0d4f9be8a75df27b1b3fbc5dbe0ffa8cf0
     profiles: ["prod"]
     restart: unless-stopped
     environment:
@@ -131,7 +131,7 @@ services:
   # it. The VM authenticates as an instance principal, so no credential is stored anywhere; its
   # policy only lets it add objects to the bucket.
   rclone:
-    image: rclone/rclone:1.75.2@sha256:2687085f718d3c628f7fdfb77c52a1d344332aed543110bb88088f2c70d43eb5
+    image: rclone/rclone:1.76.0@sha256:7cbeec24a44f206067597c0368be4de90ae19a64d5113c7d1938bd737a81e466
     profiles: ["ops"]
     restart: "no"
     environment:
