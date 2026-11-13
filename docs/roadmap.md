@@ -26,11 +26,12 @@ Since 2026-11-09 the work is ordered in three stages; each one finishes before t
 | Stage | Goal | Status |
 |---|---|---|
 | 1 | Final v1 hallucination baseline: extractor choice ([ADR-0008](adr/0008-baseline-extractor-model.md)), B7 and R8, `extract`, `match`, human labeling, `report`. | Done on 2026-11-13 |
-| 2 | A vertical slice of v2: one link in, one sourced draft out (week 2 scope, starting with its ADRs). | Not started |
+| 2 | A vertical slice of v2: one link in, one sourced article out in Telegram, then measured with the baseline protocol against `page_text`. Out of scope: angle choice, WordPress, approval workflow, audio and video, pasted text, RAG. | Started on 2026-11-13: architecture decided ([ADR-0009](adr/0009-v2-link-to-sourced-article-slice.md)); comparison protocol next (ADR-0010). Target: 2026-11-22 at the latest. |
 | 3 | Production VM and real use by the team. | Not started |
 
 ## Next steps
 
-1. LLM-judge pass on the 252 labeled elements, calibrated against the human labels (Cohen's kappa); its verdicts are stored apart and never replace a label.
-2. Stage 2, week 2 ADRs: LLM package, effects ledger, workflow state, worker concurrency, log correlation.
-3. Stage 3: discovery session with the journalists (briefing sources, a `dzdia.com` subdomain for the webhook, the team group id, journalists' Telegram ids), then the deployment on the Oracle Cloud Ampere VM: console setup, `deploy/bootstrap.sh`, first `deploy/deploy.sh`, production webhook, first backup and restore drill ([deployment](operations/deployment.md#first-installation)).
+1. Stage 2, in order, with a review by Abdou after each step: the comparison protocol (ADR-0010) and a `v2` condition in the eval harness; fetching and evidence (SSRF guard); the `llm/` package, article generation and validation; worker and Telegram wiring, tested end to end with the dev bot; the v2 eval (run, extract, match, labeling, report).
+2. LLM-judge pass on the labeled elements (v1, then v2), calibrated against the human labels (Cohen's kappa); its verdicts are stored apart and never replace a label.
+3. Later week 2 ADRs, not needed by the slice: workflow state (A4), worker concurrency (A2, R6), log correlation (A5).
+4. Stage 3: discovery session with the journalists (briefing sources, a `dzdia.com` subdomain for the webhook, the team group id, journalists' Telegram ids), then the deployment on the Oracle Cloud Ampere VM: console setup, `deploy/bootstrap.sh`, first `deploy/deploy.sh`, production webhook, first backup and restore drill ([deployment](operations/deployment.md#first-installation)).
