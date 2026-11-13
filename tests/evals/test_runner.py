@@ -45,3 +45,10 @@ async def test_execute_jobs_skips_done_and_records_errors() -> None:
     errors = [r for r in records if r.error]
     assert [r.task for r in errors] == ["article"]
     assert all(r.model == "fake-model" and r.prompt_version == "v1-frozen" for r in records)
+
+
+async def test_the_v1_runner_keeps_the_model_default_temperature() -> None:
+    jobs = plan_jobs([ORIGINAL], TEXTS, ["page_text"])
+    generator = FakeTextGenerator(lambda prompt: "Un texte.")
+    await execute_jobs(jobs, generator, set(), lambda record: None)
+    assert generator.temperatures == [None] * len(jobs)

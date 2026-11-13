@@ -29,6 +29,7 @@ Documentation of Dzdia Newsroom Engine, organized by what you want to do. Start 
 ## Evaluate it
 
 - [Baseline v1](evals/baseline-v1.md): how the legacy bot's hallucinations are measured, and the current results.
+- [v2 prompt tryout](evals/v2-tryout.md): how the v2 prompts are tried on pages outside the sample, and the rule that freezes them.
 
 ## Plan
 

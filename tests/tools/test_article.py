@@ -230,7 +230,7 @@ def test_the_retry_message_describes_the_adr_0012_issues() -> None:
     assert message.splitlines()[1:5] == [
         "- le titre « Le « festival » s’ouvre » contient des guillemets : le titre n'en "
         "contient jamais.",
-        "- l'article ne contenait aucun segment.",
+        "- l'article ne contenait aucun texte.",
         "- la phrase « Il a dit « oui ». » contient des guillemets : une citation directe va "
         'dans un segment "quote", et une phrase "sentence" n\'en contient jamais.',
         "- la citation « Nous reviendrons » cite la preuve E42, qui n'existe pas.",

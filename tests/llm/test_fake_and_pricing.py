@@ -25,6 +25,13 @@ async def test_fake_llm_parses_raw_text_like_the_real_client() -> None:
     assert info.value.raw_text == "not json"
 
 
+async def test_fake_llm_records_the_temperature_of_each_text_call() -> None:
+    llm = FakeLLM(["a", "b"])
+    assert (await llm.generate("p1")).text == "a"
+    await llm.generate("p2", temperature=0.0)
+    assert llm.temperatures == [None, 0.0]
+
+
 async def test_fake_llm_fails_loudly_when_the_script_runs_out() -> None:
     llm = FakeLLM([])
     with pytest.raises(AssertionError, match="no reply left"):

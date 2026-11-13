@@ -9,7 +9,7 @@ This page describes how the test suite is organized, how to run it (including th
 | `tests/api/` | unit | Webhook: secret check, allowlist, status codes, deduplication, no exposed docs |
 | `tests/channels/` | unit | Telegram update parsing; Bot API client retries, `retry_after`, error classes, token redaction |
 | `tests/worker/` | unit | Queue worker (completion, retries, dead jobs, heartbeat, lost lease, graceful stop) and handlers |
-| `tests/evals/` | unit | Baseline harness: sampling, snapshots, runner, extraction, matcher, labeling, report |
+| `tests/evals/` | unit | Baseline harness: sampling, snapshots, runner, extraction, matcher, labeling, report. v2 eval: the two new arms and the pinned prompt fingerprints (`test_v2_arms.py`); the prompt tryout: out-of-sample guard, page picks, idempotent run, freeze verdict, flagged segments (`test_v2_tryout.py`) |
 | `tests/llm/` | unit | Gemini client: retry policy (429, 5xx, timeouts, connection errors), `retryDelay`, request spacing, per-attempt logs, typed structured-output errors, v1 defaults kept; `FakeLLM`; cost estimate |
 | `tests/tools/` | unit | Evidence splitting and prompt delimiters; article schema, quote check, quote removal, rendering. `test_article_generation.py` holds the specification tests of validation and retry (`find_issues`, `generate_article`, ADR-0009 point 4, ADR-0011, ADR-0012) and of the outcome log line |
 | `tests/test_config.py`, `tests/test_logging_setup.py` | unit | Settings parsing and validation; JSON log format |

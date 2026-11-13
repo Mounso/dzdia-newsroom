@@ -148,9 +148,16 @@ class GeminiClient:
             },
         )
 
-    async def generate(self, prompt: str) -> Generation:
-        # No config on purpose: v1 called generate_content with the model defaults.
-        response, latency_ms = await self._call(prompt, config=None)
+    async def generate(self, prompt: str, *, temperature: float | None = None) -> Generation:
+        # No config when no temperature is given, on purpose: v1 called generate_content with
+        # the model defaults. The `plain_prompt` arm of the v2 eval sends only a temperature
+        # (ADR-0010, point 2).
+        config = (
+            types.GenerateContentConfig(temperature=temperature)
+            if temperature is not None
+            else None
+        )
+        response, latency_ms = await self._call(prompt, config=config)
         usage = response.usage_metadata
         return Generation(
             text=response.text or "",

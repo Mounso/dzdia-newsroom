@@ -55,7 +55,9 @@ class StructuredOutputError(Exception):
 class TextGenerator(Protocol):
     model: str
 
-    async def generate(self, prompt: str) -> Generation: ...
+    async def generate(self, prompt: str, *, temperature: float | None = None) -> Generation:
+        """Free text. `temperature` None keeps the model's defaults (what v1 sent)."""
+        ...
 
 
 class StructuredGenerator(Protocol):

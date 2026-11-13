@@ -33,6 +33,7 @@ class FakeLLM:
         self.model = model
         self.thinking_level = thinking_level
         self.prompts: list[str] = []
+        self.temperatures: list[float | None] = []  # one per `generate` call
         self._replies: deque[Reply] = deque(replies)
 
     def _next(self, prompt: str) -> BaseModel | str:
@@ -44,7 +45,8 @@ class FakeLLM:
             raise reply
         return reply
 
-    async def generate(self, prompt: str) -> Generation:
+    async def generate(self, prompt: str, *, temperature: float | None = None) -> Generation:
+        self.temperatures.append(temperature)
         reply = self._next(prompt)
         text = reply if isinstance(reply, str) else reply.model_dump_json()
         return Generation(text=text, latency_ms=1, input_tokens=10, output_tokens=5)

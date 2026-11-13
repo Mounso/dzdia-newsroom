@@ -54,3 +54,19 @@ async def test_text_call_keeps_v1_defaults(monkeypatch: pytest.MonkeyPatch) -> N
     client, configs = _client(monkeypatch, thinking_level="low", max_rpm=60_000)
     await client.generate("prompt")
     assert configs == [None]
+
+
+async def test_text_call_without_temperature_sends_no_config(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client, configs = _client(monkeypatch, max_rpm=60_000)
+    await client.generate("prompt", temperature=None)
+    assert configs[0] is None
+
+
+async def test_text_call_sends_only_the_temperature(monkeypatch: pytest.MonkeyPatch) -> None:
+    client, configs = _client(monkeypatch, thinking_level="low", max_rpm=60_000)
+    result = await client.generate("prompt", temperature=0.0)
+    assert result.text == '{"ok": true}'
+    assert configs[0].temperature == 0.0
+    assert configs[0] == types.GenerateContentConfig(temperature=0.0)  # nothing else is set

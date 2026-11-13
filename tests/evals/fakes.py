@@ -11,10 +11,12 @@ class FakeTextGenerator:
     def __init__(self, respond: Callable[[str], str], model: str = "fake-model") -> None:
         self.model = model
         self.prompts: list[str] = []
+        self.temperatures: list[float | None] = []
         self._respond = respond
 
-    async def generate(self, prompt: str) -> Generation:
+    async def generate(self, prompt: str, *, temperature: float | None = None) -> Generation:
         self.prompts.append(prompt)
+        self.temperatures.append(temperature)
         return Generation(
             text=self._respond(prompt), latency_ms=1, input_tokens=10, output_tokens=5
         )

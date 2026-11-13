@@ -156,6 +156,32 @@ def test_the_title_issue_comes_before_the_empty_issue() -> None:
     assert [i.kind for i in issues] == [IssueKind.QUOTATION_MARKS, IssueKind.EMPTY]
 
 
+def test_a_draft_whose_only_sentence_is_blank_is_empty() -> None:
+    [issue] = find_issues(draft([sentence("", "E2")]), EVIDENCE)
+    assert issue.kind is IssueKind.EMPTY
+    assert issue.paragraph is None and issue.segment is None and issue.text == ""
+
+
+def test_whitespace_only_text_counts_as_blank() -> None:
+    blank = draft([sentence(" \n \t", "E2")], [quote("   ")])
+    assert [i.kind for i in find_issues(blank, EVIDENCE)] == [
+        IssueKind.EMPTY,
+        IssueKind.QUOTE_NOT_IN_EVIDENCE,
+    ]
+
+
+def test_blank_segments_keep_their_other_issues() -> None:
+    issues = find_issues(draft([sentence("  ")]), EVIDENCE)
+    assert [(i.kind, i.paragraph, i.segment) for i in issues] == [
+        (IssueKind.EMPTY, None, None),
+        (IssueKind.NO_ID, 0, 0),
+    ]
+
+
+def test_a_blank_segment_next_to_a_real_one_is_not_an_issue() -> None:
+    assert find_issues(draft([sentence(" ", "E2"), OPENING], [quote(GOOD_QUOTE)]), EVIDENCE) == []
+
+
 # --- generate_article ------------------------------------------------------------------------
 
 
@@ -225,6 +251,27 @@ async def test_an_article_emptied_by_the_removal_fails_the_generation() -> None:
         await generate_article(llm, EVIDENCE)
 
 
+async def test_an_article_left_with_no_text_by_the_removal_fails_the_generation(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    caplog.set_level(logging.INFO, logger="dzdia_newsroom.tools.article")
+    bad = draft([sentence("  ", "E2"), quote(BAD_QUOTE)])
+    llm = FakeLLM([bad, bad])
+    with pytest.raises(GenerationFailedError) as info:
+        await generate_article(llm, EVIDENCE)
+    assert str(info.value) == "no text left after removing 1 quote(s)"
+    assert len(info.value.attempts) == 2 and len(llm.prompts) == 2
+    [record] = [r for r in caplog.records if r.name == "dzdia_newsroom.tools.article"]
+    assert (record.outcome, record.removed_quotes) == ("failed", 1)  # type: ignore[attr-defined]
+
+
+async def test_a_real_sentence_next_to_a_removed_quote_still_succeeds() -> None:
+    bad = draft([OPENING, sentence(" ", "E2"), quote(BAD_QUOTE)])
+    result = await generate_article(FakeLLM([bad, bad]), EVIDENCE)
+    assert result.article == draft([OPENING, sentence(" ", "E2")])
+    assert result.removed_quotes == 1
+
+
 async def test_id_errors_win_over_quote_errors_after_the_retry() -> None:
     bad = draft([sentence("Ouverture."), quote(BAD_QUOTE)])
     llm = FakeLLM([bad, bad])
@@ -275,6 +322,18 @@ async def test_an_empty_draft_left_after_the_retry_fails_the_generation() -> Non
     with pytest.raises(GenerationFailedError) as info:
         await generate_article(llm, EVIDENCE)
     assert len(info.value.attempts) == 2
+
+
+async def test_a_blank_draft_left_after_the_retry_fails_the_generation() -> None:
+    blank = draft([sentence("  ", "E2")])
+    llm = FakeLLM([blank, blank])
+    with pytest.raises(GenerationFailedError) as info:
+        await generate_article(llm, EVIDENCE)
+    assert [[i.kind for i in a.issues] for a in info.value.attempts] == [
+        [IssueKind.EMPTY],
+        [IssueKind.EMPTY],
+    ]
+    assert "empty" in str(info.value)
 
 
 async def test_an_empty_draft_uses_the_retry() -> None:

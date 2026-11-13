@@ -23,7 +23,9 @@ from dzdia_newsroom.tools.evidence import EvidenceSet
 
 logger = logging.getLogger(__name__)
 
-PROMPT_VERSION = "v2-article-1"  # draft: frozen before the v2 eval run (ADR-0010, point 4)
+# Frozen on 2026-11-13 after the tryout (ADR-0010, point 4). Its fingerprint is pinned in
+# `evals/v2/arms.py` and checked by `tests/evals/test_v2_arms.py`.
+PROMPT_VERSION = "v2-article-1"
 
 # --- schema ----------------------------------------------------------------------------------
 # A plain union, not a pydantic discriminated union: the SDK rejects the `oneOf` that a
@@ -52,7 +54,9 @@ class Paragraph(BaseModel):
 
 
 class ArticleDraft(BaseModel):
-    title: str
+    title: str = Field(
+        description="Informative title, written without quotation marks. It cites no evidence."
+    )
     paragraphs: list[Paragraph]
 
 
@@ -103,7 +107,7 @@ class IssueKind(StrEnum):
     QUOTE_NOT_IN_EVIDENCE = "quote_not_in_evidence"  # see `check_quote`
     QUOTE_UNKNOWN_ID = "quote_unknown_id"  # a quote citing an id that is not in the evidence set
     QUOTATION_MARKS = "quotation_marks"  # quotation marks in a sentence or in the title
-    EMPTY = "empty"  # a draft with no segment at all
+    EMPTY = "empty"  # a draft with no segment whose text is non-blank (ADR-0012, point 3)
 
 
 # Issues of these kinds remove the quote after the retry (ADR-0011, ADR-0012); any other kind
@@ -138,8 +142,9 @@ def retry_feedback(issues: list[Issue]) -> str:
         lines.append(f"- {_describe_issue(issue)}")
     lines.append(
         "Écris l'article à nouveau en corrigeant ces erreurs. Pour une citation refusée, soit "
-        "tu recopies les mots exactement depuis la preuve citée, soit tu réécris le fait dans "
-        'un segment "sentence" avec les identifiants de ses preuves.'
+        "tu recopies les mots exactement depuis une preuve qui existe et tu cites son "
+        'identifiant, soit tu réécris le fait dans un segment "sentence" avec les identifiants '
+        "de ses preuves."
     )
     return "\n".join(lines)
 
@@ -170,7 +175,7 @@ def _describe_issue(issue: Issue) -> str:
                 'dans un segment "quote", et une phrase "sentence" n\'en contient jamais.'
             )
         case IssueKind.EMPTY:
-            return "l'article ne contenait aucun segment."
+            return "l'article ne contenait aucun texte."
 
 
 # --- quote check (ADR-0009, point 3) ---------------------------------------------------------
@@ -308,9 +313,12 @@ def find_issues(draft: ArticleDraft, evidence: EvidenceSet) -> list[Issue]:
       is not checked otherwise.
 
     Draft:
-    - No segment at all (no paragraph, or only paragraphs with empty `segments`): EMPTY, with
-      `paragraph` and `segment` None and `text` empty. An empty paragraph next to non-empty
-      ones is not an issue.
+    - No segment with non-blank text (`text.strip()`): no paragraph, only paragraphs with empty
+      `segments`, or only segments whose text is blank. EMPTY, with `paragraph` and `segment`
+      None and `text` empty. The other issues of those blank segments are still reported (a
+      blank sentence with no id still gives NO_ID, a blank quote still gives its quote issue).
+      An empty paragraph or a blank segment next to at least one non-blank segment is not an
+      issue.
 
     Sentence segment:
     - No id: NO_ID.
@@ -335,7 +343,7 @@ def find_issues(draft: ArticleDraft, evidence: EvidenceSet) -> list[Issue]:
     issues: list[Issue] = []
     if has_quotation_marks(draft.title):
         issues.append(Issue(IssueKind.QUOTATION_MARKS, text=draft.title))
-    if not any(paragraph.segments for paragraph in draft.paragraphs):
+    if not _has_text(draft):
         issues.append(Issue(IssueKind.EMPTY))
     known_ids = evidence.ids
     for p_index, paragraph in enumerate(draft.paragraphs):
@@ -347,6 +355,14 @@ def find_issues(draft: ArticleDraft, evidence: EvidenceSet) -> list[Issue]:
             for kind, detail in problems:
                 issues.append(Issue(kind, p_index, s_index, text=segment.text, detail=detail))
     return issues
+
+
+def _has_text(draft: ArticleDraft) -> bool:
+    """Whether at least one segment has non-blank text. Shared by the EMPTY issue of
+    `find_issues` and the check after the quote removal of `generate_article`."""
+    return any(
+        segment.text.strip() for paragraph in draft.paragraphs for segment in paragraph.segments
+    )
 
 
 def _sentence_problems(
@@ -386,7 +402,8 @@ async def generate_article(llm: StructuredGenerator, evidence: EvidenceSet) -> A
        `retry_feedback(issues)`.
     4. After the retry: any issue whose kind is not in `REMOVABLE_KINDS` left: raise
        `GenerationFailedError`. Only removable issues left: `remove_failed_quotes`; if no
-       paragraph is left, raise `GenerationFailedError`.
+       paragraph is left, or no remaining segment has non-blank text (the EMPTY rule of
+       `find_issues`), raise `GenerationFailedError`.
     5. Return the article with every attempt (draft or raw text, issues, usage, latency), the
        number of removed quotes and `llm.model`.
 
@@ -415,6 +432,11 @@ async def generate_article(llm: StructuredGenerator, evidence: EvidenceSet) -> A
         _log_outcome(llm.model, attempts, "failed", removed_quotes=removed)
         raise GenerationFailedError(
             f"no paragraph left after removing {removed} quote(s)", attempts=attempts
+        )
+    if not _has_text(article):
+        _log_outcome(llm.model, attempts, "failed", removed_quotes=removed)
+        raise GenerationFailedError(
+            f"no text left after removing {removed} quote(s)", attempts=attempts
         )
     _log_outcome(llm.model, attempts, "ok", removed_quotes=removed)
     return ArticleResult(

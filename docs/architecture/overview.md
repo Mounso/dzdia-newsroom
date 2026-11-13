@@ -125,6 +125,7 @@ src/dzdia_newsroom/
 ├── logging_setup.py   JSON log formatter
 └── runtime.py    event loop selection (Windows)
 evals/baseline_v1/     hallucination baseline of v1 (offline pipeline, see docs/evals)
+evals/v2/              v2 eval: the `plain_prompt` and `v2` arms, and the prompt tryout
 ```
 
 Dependency rules, enforced by review and visible in the imports:
