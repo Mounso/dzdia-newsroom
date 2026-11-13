@@ -153,7 +153,7 @@
 {"element_id":"tsa-02:page_text:article:0#organization:16e5160142","label":"SUPPORTED","note":""}
 {"element_id":"tsa-02:page_text:article:0#quote:100ad66158","label":"CONTRADICTED","note":"Pas exactement sa citation"}
 {"element_id":"tsa-02:page_text:article:0#quote:71d28f8704","label":"CONTRADICTED","note":"Pas exactement sa citation"}
-{"element_id":"tsa-02:page_text:article:0#quote:9def7f653c","label":"SUPPORTED","note":""}
+{"element_id":"tsa-02:page_text:article:0#quote:9def7f653c","label":"CONTRADICTED","note":""}
 {"element_id":"tsa-02:page_text:summary:1#quote:515a0a162a","label":"SUPPORTED","note":""}
 {"element_id":"tsa-02:page_text:summary:2#place:8e8f0db33c","label":"SUPPORTED","note":""}
 {"element_id":"tsa-02:url_only:article:0#organization:8ed21c8abc","label":"NOT_IN_SOURCE","note":""}

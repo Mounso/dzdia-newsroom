@@ -95,9 +95,9 @@ On the 16 original articles (opaque duplicates excluded), both tasks together, 9
 | Condition | Outputs | Elements | Unsupported elements | Outputs with ≥ 1 unsupported |
 |---|---|---|---|---|
 | `url_only` (v1 as shipped) | 64 | 258 | **28 % [21–35 %]** (72/258) | 41 % [30–53 %] (26/64) |
-| `page_text` (same prompts, given the page text) | 64 | 445 | 5 % [3–7 %] (23/445) | 28 % [19–38 %] (18/64) |
+| `page_text` (same prompts, given the page text) | 64 | 445 | 5 % [3–8 %] (24/445) | 28 % [19–38 %] (18/64) |
 
-- Not opening the link multiplies the share of unsupported elements by about 5.5. In `url_only`, generated **articles** reach 48 % [39–56 %] unsupported elements and 15 of 16 contain at least one; **quotes** are unsupported at 67 % [47–92 %].
+- Not opening the link multiplies the share of unsupported elements by about 5. In `url_only`, generated **articles** reach 48 % [39–56 %] unsupported elements and 15 of 16 contain at least one; **quotes** are unsupported at 67 % [47–92 %].
 - The slug matters: through an opaque `?p=ID` URL, 70 % [46–88 %] of elements are unsupported, against 22 % [10–39 %] for the same four articles reached through their normal URL.
 - **These are lower bounds.** Unaudited `found` elements count as supported, and the audit found 86 % [68–100 %] of `url_only` `found` elements supported (30/35; 95 % for `page_text`). See the limitations below.
 
@@ -109,7 +109,7 @@ On the 16 original articles (opaque duplicates excluded), both tasks together, 9
 - **Extractor choice.** The model under test cannot extract its own elements (self-evaluation bias). A lighter model tested on 20 runs found 76 % of distinct elements but only 2 of 7 quotes and 8 of 16 organizations, so it would underestimate hallucinations; it was rejected. The extractor, `gemini-3.1-pro-preview`, is from the same family as the model under test; it judges nothing (code and a human do), but the shared family can still affect which elements are listed ([ADR-0008](../adr/0008-baseline-extractor-model.md)).
 - **Matcher false positives make every rate a lower bound.** An element can be "found" in a different context than the one stated ("2027" is in the article, but the output says something else about it). Only the 20 % audit sample is labeled; the other `found` elements count as supported. The audit shows 86 % precision in `url_only` (5 of 35 unsupported) and 95 % in `page_text`, so the true `url_only` rate is above 28 %; extrapolating the audit would put it near 36 %, an estimate not used in the report. Labeling the 150 unaudited `url_only` `found` elements would remove the assumption.
 - **Corpus scope.** The 16 articles are general Algerian news (politics, visas, economy, transport) from TSA and Algérie 360, not the positive cultural content Dzdia publishes. The mechanism measured (v1 never opens the link) does not depend on the topic, but the exact rate does: the model may know less about a local artist than about Schengen visas. The v2 evaluation set should come from the content the team will actually send.
-- **One labeler.** All labels come from one person, with no second labeler, so inter-annotator agreement is not measured. Mechanical checks caught one rule applied two ways (reworded quotes); one reworded quote in tsa-02 is still labeled `S`.
+- **One labeler.** All labels come from one person, with no second labeler, so inter-annotator agreement is not measured. Mechanical checks caught one rule applied two ways (reworded quotes); all reworded quotes are now `C`.
 - **Provisional figures while labeling.** Until every pending element is labeled, the element and output rates are ranges, and the contradicted and per-type rates cover decided elements only ([B6](../reviews/2026-10-28-design-review.md#b6--output-level-rate-is-a-lower-bound-while-labels-are-pending)). Only a report without the "Provisional report" banner gives final numbers.
 - **Adjacent numbers.** Since [B7](../reviews/2026-10-28-design-review.md#b7--adjacent-numbers-merged), a year followed by a number reads as two numbers; "le 12 450 participants" still reads 12450, which only adds an element to label.
 
