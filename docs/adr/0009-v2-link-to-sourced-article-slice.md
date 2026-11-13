@@ -3,7 +3,7 @@
 - **Status:** Accepted
 - **Date:** 2026-11-13
 - **Deciders:** Abdou (author), with Claude as reviewer
-- **Amended by:** [ADR-0011](0011-failed-quote-is-removed.md) (points 3 and 4, and the second consequence: a failed quote is removed, not rendered as indirect speech)
+- **Amended by:** [ADR-0011](0011-failed-quote-is-removed.md) (points 3 and 4, and the second consequence: a failed quote is removed, not rendered as indirect speech); [ADR-0012](0012-validator-closes-three-gaps.md) (point 4: a quote with an unknown id is removed; quotation marks outside quotes and empty drafts are errors)
 - **Related:** [ADR-0004](0004-runtime-foundation.md) (queue and worker), [ADR-0005](0005-telegram-ingress.md) (Telegram ingress), [ADR-0008](0008-baseline-extractor-model.md) (extractor); design review points [A1, A3](../reviews/2026-10-28-design-review.md#to-decide-before-or-during-week-2-one-adr-each), R5, R10. The comparison protocol is a separate ADR ([ADR-0010](0010-v2-comparison-protocol.md)).
 
 ## Context

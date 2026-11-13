@@ -14,6 +14,7 @@ from dzdia_newsroom.tools.article import (
     SentenceSegment,
     build_prompt,
     check_quote,
+    has_quotation_marks,
     remove_failed_quotes,
     render_text,
     retry_feedback,
@@ -64,6 +65,25 @@ def test_the_prompt_carries_the_evidence_inside_delimiters() -> None:
     assert prompt.rstrip().endswith("</sources>")
     assert '<evidence id="E2">Le festival s’est ouvert le 3 mai' in prompt
     assert "non fiable" in prompt
+
+
+def test_the_prompt_forbids_quotation_marks_in_the_title() -> None:
+    assert "- Le titre ne cite aucune preuve et ne contient pas de guillemets." in build_prompt(
+        EVIDENCE
+    )
+
+
+# --- quotation marks -------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("mark", ["«", "»", "“", "”", "„", '"'])
+def test_each_quotation_mark_is_detected(mark: str) -> None:
+    assert has_quotation_marks(f"Il a dit {mark}oui.")
+
+
+def test_apostrophes_are_not_quotation_marks() -> None:
+    assert not has_quotation_marks("L’ouverture s'est tenue.")
+    assert not has_quotation_marks("‘ʼ")
 
 
 # --- quote check -----------------------------------------------------------------------------
@@ -140,6 +160,44 @@ def test_other_issues_and_sentences_are_left_alone() -> None:
     assert remove_failed_quotes(draft, [no_id, _failed(0, 0)]) == (draft, 0)
 
 
+def test_a_quote_citing_an_unknown_id_is_removed() -> None:
+    draft = ArticleDraft(
+        title="T",
+        paragraphs=[Paragraph(segments=[sentence("Ouverture.", "E2"), quote("vrai", "E42")])],
+    )
+    unknown = Issue(IssueKind.QUOTE_UNKNOWN_ID, 0, 1, "vrai", "E42")
+    cleaned, removed = remove_failed_quotes(draft, [unknown])
+    assert removed == 1
+    assert cleaned.paragraphs == [Paragraph(segments=[sentence("Ouverture.", "E2")])]
+
+
+def test_both_removable_kinds_are_removed_together() -> None:
+    draft = ArticleDraft(
+        title="T",
+        paragraphs=[
+            Paragraph(segments=[sentence("Ouverture.", "E2"), quote("vrai", "E42")]),
+            Paragraph(segments=[quote("faux")]),
+        ],
+    )
+    unknown = Issue(IssueKind.QUOTE_UNKNOWN_ID, 0, 1, "vrai", "E42")
+    cleaned, removed = remove_failed_quotes(draft, [unknown, _failed(1, 0)])
+    assert removed == 2
+    assert cleaned.paragraphs == [Paragraph(segments=[sentence("Ouverture.", "E2")])]
+
+
+def test_non_removable_kinds_remove_nothing() -> None:
+    draft = ArticleDraft(
+        title="T",
+        paragraphs=[Paragraph(segments=[sentence("Il a dit « oui ».", "E2"), quote("faux")])],
+    )
+    issues = [
+        Issue(IssueKind.NO_ID, 0, 1, "faux"),
+        Issue(IssueKind.QUOTATION_MARKS, 0, 1, "faux"),
+        Issue(IssueKind.QUOTATION_MARKS, 0, 0, "Il a dit « oui »."),
+    ]
+    assert remove_failed_quotes(draft, issues) == (draft, 0)
+
+
 # --- retry message ---------------------------------------------------------------------------
 
 
@@ -157,6 +215,25 @@ def test_the_retry_message_quotes_each_error_and_offers_both_fixes() -> None:
     assert "« Nous revenons » ne se trouve pas mot pour mot dans la preuve E3" in message
     assert "JSON" in message
     assert "recopies les mots exactement" in message and 'segment "sentence"' in message
+
+
+def test_the_retry_message_describes_the_adr_0012_issues() -> None:
+    message = retry_feedback(
+        [
+            Issue(IssueKind.QUOTATION_MARKS, text="Le « festival » s’ouvre"),
+            Issue(IssueKind.EMPTY),
+            Issue(IssueKind.QUOTATION_MARKS, 0, 0, "Il a dit « oui »."),
+            Issue(IssueKind.QUOTE_UNKNOWN_ID, 0, 1, "Nous reviendrons", "E42"),
+        ]
+    )
+    assert message.splitlines()[1:5] == [
+        "- le titre « Le « festival » s’ouvre » contient des guillemets : le titre n'en "
+        "contient jamais.",
+        "- l'article ne contenait aucun segment.",
+        "- la phrase « Il a dit « oui ». » contient des guillemets : une citation directe va "
+        'dans un segment "quote", et une phrase "sentence" n\'en contient jamais.',
+        "- la citation « Nous reviendrons » cite la preuve E42, qui n'existe pas.",
+    ]
 
 
 # --- rendering -------------------------------------------------------------------------------

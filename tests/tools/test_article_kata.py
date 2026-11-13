@@ -1,5 +1,5 @@
 """Specification of Abdou's kata: `find_issues` and `generate_article` (ADR-0009 point 4,
-ADR-0011, review finding V-9).
+ADR-0011, ADR-0012, review finding V-9).
 
 The bodies raise NotImplementedError until Abdou writes them, so every test here is an expected
 failure on NotImplementedError only: any other failure (a wrong result) is reported as a real
@@ -44,8 +44,10 @@ def quote(text: str, evidence_id: str = "E3") -> QuoteSegment:
     return QuoteSegment(kind="quote", speaker="Karim Ziani", text=text, evidence_id=evidence_id)
 
 
-def draft(*paragraphs: list[SentenceSegment | QuoteSegment]) -> ArticleDraft:
-    return ArticleDraft(title="Festival", paragraphs=[Paragraph(segments=p) for p in paragraphs])
+def draft(
+    *paragraphs: list[SentenceSegment | QuoteSegment], title: str = "Festival"
+) -> ArticleDraft:
+    return ArticleDraft(title=title, paragraphs=[Paragraph(segments=p) for p in paragraphs])
 
 
 OPENING = sentence("Le festival s’est ouvert le 3 mai.", "E2")
@@ -75,7 +77,8 @@ def test_one_issue_per_unknown_id() -> None:
 
 def test_a_quote_citing_an_unknown_id() -> None:
     [issue] = find_issues(draft([quote(GOOD_QUOTE, evidence_id="E42")]), EVIDENCE)
-    assert (issue.kind, issue.detail) == (IssueKind.UNKNOWN_ID, "E42")
+    assert (issue.kind, issue.detail) == (IssueKind.QUOTE_UNKNOWN_ID, "E42")
+    assert issue.text == GOOD_QUOTE
 
 
 def test_a_quote_not_found_in_its_evidence() -> None:
@@ -103,6 +106,61 @@ def test_issues_come_in_document_order() -> None:
         (0, 1, IssueKind.QUOTE_NOT_IN_EVIDENCE),
         (1, 0, IssueKind.UNKNOWN_ID),
     ]
+
+
+@pytest.mark.parametrize("mark", ["«", "»", "“", "”", "„", '"'])
+def test_quotation_marks_in_a_sentence(mark: str) -> None:
+    marked = sentence(f"Le festival s’est ouvert {mark}le 3 mai.", "E2")
+    [issue] = find_issues(draft([OPENING, marked]), EVIDENCE)
+    assert (issue.kind, issue.paragraph, issue.segment) == (IssueKind.QUOTATION_MARKS, 0, 1)
+    assert issue.text == marked.text
+
+
+def test_apostrophes_alone_are_not_quotation_marks() -> None:
+    apostrophes = sentence("L’ouverture s'est tenue le ‘3 mai’.", "E2")
+    assert find_issues(draft([apostrophes, quote(GOOD_QUOTE)]), EVIDENCE) == []
+
+
+def test_quotation_marks_in_the_title() -> None:
+    title = "Le « Festival » s’ouvre"
+    [issue] = find_issues(draft([OPENING, quote(GOOD_QUOTE)], title=title), EVIDENCE)
+    assert (issue.kind, issue.paragraph, issue.segment) == (IssueKind.QUOTATION_MARKS, None, None)
+    assert issue.text == title
+
+
+def test_an_unknown_id_comes_before_quotation_marks_in_a_sentence() -> None:
+    issues = find_issues(draft([sentence("Il a dit « oui ».", "E2", "E9")]), EVIDENCE)
+    assert [i.kind for i in issues] == [IssueKind.UNKNOWN_ID, IssueKind.QUOTATION_MARKS]
+
+
+def test_a_missing_id_comes_before_quotation_marks_in_a_sentence() -> None:
+    issues = find_issues(draft([sentence("Il a dit « oui ».")]), EVIDENCE)
+    assert [i.kind for i in issues] == [IssueKind.NO_ID, IssueKind.QUOTATION_MARKS]
+
+
+def test_quotation_marks_inside_a_quote_are_not_an_issue() -> None:
+    verbatim = quote("Nous reviendrons l’an prochain », a déclaré Karim Ziani")
+    speaker = QuoteSegment(kind="quote", speaker="“Karim” Ziani", text=GOOD_QUOTE, evidence_id="E3")
+    assert find_issues(draft([OPENING, verbatim, speaker]), EVIDENCE) == []
+
+
+def test_a_draft_with_no_paragraph_is_empty() -> None:
+    [issue] = find_issues(draft(), EVIDENCE)
+    assert issue.kind is IssueKind.EMPTY
+    assert issue.paragraph is None and issue.segment is None and issue.text == ""
+
+
+def test_a_draft_with_only_an_empty_paragraph_is_empty() -> None:
+    assert [i.kind for i in find_issues(draft([]), EVIDENCE)] == [IssueKind.EMPTY]
+
+
+def test_an_empty_paragraph_next_to_a_valid_one_is_not_an_issue() -> None:
+    assert find_issues(draft([], [OPENING, quote(GOOD_QUOTE)]), EVIDENCE) == []
+
+
+def test_the_title_issue_comes_before_the_empty_issue() -> None:
+    issues = find_issues(draft(title="« Festival »"), EVIDENCE)
+    assert [i.kind for i in issues] == [IssueKind.QUOTATION_MARKS, IssueKind.EMPTY]
 
 
 # --- generate_article ------------------------------------------------------------------------
@@ -179,6 +237,60 @@ async def test_id_errors_win_over_quote_errors_after_the_retry() -> None:
     llm = FakeLLM([bad, bad])
     with pytest.raises(GenerationFailedError):
         await generate_article(llm, EVIDENCE)
+
+
+async def test_a_quote_citing_an_unknown_id_after_the_retry_is_removed() -> None:
+    bad = draft([OPENING, quote(GOOD_QUOTE, evidence_id="E42")])
+    llm = FakeLLM([bad, bad])
+    result = await generate_article(llm, EVIDENCE)
+    assert result.article == draft([OPENING])
+    assert result.removed_quotes == 1
+    assert len(result.attempts) == 2
+    assert "cite la preuve E42, qui n'existe pas" in llm.prompts[1]
+
+
+async def test_both_removable_quote_errors_are_removed_after_the_retry() -> None:
+    bad = draft([OPENING, quote(GOOD_QUOTE, evidence_id="E42"), quote(BAD_QUOTE)])
+    llm = FakeLLM([bad, bad])
+    result = await generate_article(llm, EVIDENCE)
+    assert result.article == draft([OPENING]) and result.removed_quotes == 2
+
+
+async def test_quotation_marks_left_after_the_retry_fail_the_generation() -> None:
+    bad = draft([sentence("Il a dit « oui ».", "E2"), quote(GOOD_QUOTE)])
+    llm = FakeLLM([bad, bad])
+    with pytest.raises(GenerationFailedError) as info:
+        await generate_article(llm, EVIDENCE)
+    assert len(info.value.attempts) == 2 and len(llm.prompts) == 2
+
+
+async def test_quotation_marks_fixed_at_the_retry() -> None:
+    llm = FakeLLM([draft([sentence("Il a dit « oui ».", "E2"), quote(GOOD_QUOTE)]), VALID])
+    result = await generate_article(llm, EVIDENCE)
+    assert result.article == VALID and result.removed_quotes == 0
+
+
+async def test_quotation_marks_win_over_quote_errors_after_the_retry() -> None:
+    bad = draft([sentence("Il a dit « oui ».", "E2"), quote(BAD_QUOTE)])
+    llm = FakeLLM([bad, bad])
+    with pytest.raises(GenerationFailedError):
+        await generate_article(llm, EVIDENCE)
+
+
+async def test_an_empty_draft_left_after_the_retry_fails_the_generation() -> None:
+    llm = FakeLLM([draft(), draft()])
+    with pytest.raises(GenerationFailedError) as info:
+        await generate_article(llm, EVIDENCE)
+    assert len(info.value.attempts) == 2
+
+
+async def test_an_empty_draft_uses_the_retry() -> None:
+    llm = FakeLLM([draft(), VALID])
+    result = await generate_article(llm, EVIDENCE)
+    assert result.article == VALID
+    first = result.attempts[0]
+    assert [issue.kind for issue in first.issues] == [IssueKind.EMPTY]
+    assert first.draft == draft()
 
 
 async def test_an_unparsable_output_uses_the_retry() -> None:

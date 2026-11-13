@@ -4,7 +4,7 @@
 - **Date:** 2026-11-13
 - **Deciders:** Abdou (author), with Claude as reviewer
 - **Amends:** [ADR-0001](0001-baseline-hallucination-protocol.md) (point 4: the `v2` condition is defined and a `plain_prompt` condition is added; point 5: full labeling for this comparison)
-- **Related:** [ADR-0008](0008-baseline-extractor-model.md) (extractor), [ADR-0009](0009-v2-link-to-sourced-article-slice.md) and [ADR-0011](0011-failed-quote-is-removed.md) (the pipeline under test); [independent review of 2026-11-13](../reviews/2026-11-13-independent-review.md), findings V-2, V-3, V-4, V-5, V-6, V-10, E-3, E-5
+- **Related:** [ADR-0008](0008-baseline-extractor-model.md) (extractor), [ADR-0009](0009-v2-link-to-sourced-article-slice.md), [ADR-0011](0011-failed-quote-is-removed.md) and [ADR-0012](0012-validator-closes-three-gaps.md) (the pipeline under test); [independent review of 2026-11-13](../reviews/2026-11-13-independent-review.md), findings V-2, V-3, V-4, V-5, V-6, V-10, E-3, E-5
 
 ## Context
 

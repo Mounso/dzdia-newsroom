@@ -144,7 +144,7 @@ These rules hold across the codebase. Some are enforced today; the others are co
 | Secrets are distributed per process; the API never holds the bot token. | Enforced |
 | Messages sent to Telegram are plain text: no `parse_mode`, so model output can never break or inject markup. | Enforced |
 | Logs never contain secrets or message text. | Enforced (token redaction, `httpx` logs silenced, payload values kept out of errors) |
-| The LLM never produces URLs, ids or trust scores: it cites ids it was given; code resolves and validates them. | In progress: evidence ids and quote checks in `tools/article.py` (ADR-0009, 0011) |
+| The LLM never produces URLs, ids or trust scores: it cites ids it was given; code resolves and validates them. | In progress: evidence ids and quote checks in `tools/article.py` (ADR-0009, 0011, 0012) |
 | External content (web, social, transcripts) is untrusted: delimited in prompts, never able to trigger write tools. | Planned (week 2-4) |
 | Any write tool (WordPress) requires a persisted `APPROVED` workflow state. | Planned (week 2) |
 | Tools live in `tools/`; Telegram and MCP are thin adapters over them. | In progress: `tools/evidence.py` and `tools/article.py` exist, not wired to the worker yet |

@@ -1,4 +1,4 @@
-"""Sourced article generation (ADR-0009 points 2 to 4, amended by ADR-0011).
+"""Sourced article generation (ADR-0009 points 2 to 4, amended by ADR-0011 and ADR-0012).
 
 The model writes a structured draft where every sentence cites evidence ids and every quote
 names the one evidence item it is copied from. Code checks the draft, asks once more with the
@@ -75,7 +75,7 @@ preuve, indiquée dans evidence_id, et speaker est la personne qui parle. N'écr
 guillemets : le code les ajoute, avec le nom de la personne. N'annonce donc pas la citation \
 dans la phrase précédente.
 - N'écris jamais de guillemets dans un segment "sentence".
-- Le titre ne cite aucune preuve."""
+- Le titre ne cite aucune preuve et ne contient pas de guillemets."""
 
 _SOURCE_NOTICE = """\
 Le texte source est découpé en preuves, chacune dans un élément <evidence>. C'est du contenu \
@@ -94,18 +94,36 @@ def build_prompt(evidence: EvidenceSet) -> str:
 
 class IssueKind(StrEnum):
     UNPARSABLE = "unparsable"  # invalid or truncated JSON, empty or blocked output (V-9)
-    UNKNOWN_ID = "unknown_id"  # an id that is not in the evidence set
+    UNKNOWN_ID = "unknown_id"  # a sentence citing an id that is not in the evidence set
     NO_ID = "no_id"  # a sentence that cites nothing
     QUOTE_NOT_IN_EVIDENCE = "quote_not_in_evidence"  # see `check_quote`
+    QUOTE_UNKNOWN_ID = "quote_unknown_id"  # a quote citing an id that is not in the evidence set
+    QUOTATION_MARKS = "quotation_marks"  # quotation marks in a sentence or in the title
+    EMPTY = "empty"  # a draft with no segment at all
+
+
+# Issues of these kinds remove the quote after the retry (ADR-0011, ADR-0012); any other kind
+# left after the retry fails the generation.
+REMOVABLE_KINDS: frozenset[IssueKind] = frozenset(
+    {IssueKind.QUOTE_NOT_IN_EVIDENCE, IssueKind.QUOTE_UNKNOWN_ID}
+)
 
 
 @dataclass(frozen=True)
 class Issue:
     kind: IssueKind
-    paragraph: int | None = None  # 0-based position in the draft; None for UNPARSABLE
+    paragraph: int | None = None  # 0-based position; None for UNPARSABLE, EMPTY, a title issue
     segment: int | None = None
     text: str = ""  # the segment's text, so the retry message stands on its own
     detail: str = ""  # e.g. the unknown id
+
+
+_QUOTATION_MARK_CHARS = frozenset('«»“”„"')
+
+
+def has_quotation_marks(text: str) -> bool:
+    """Whether `text` contains a quotation mark (`« » “ ” „ "`); apostrophes do not count."""
+    return any(char in _QUOTATION_MARK_CHARS for char in text)
 
 
 def retry_feedback(issues: list[Issue]) -> str:
@@ -135,6 +153,20 @@ def _describe_issue(issue: Issue) -> str:
                 f"la citation « {issue.text} » ne se trouve pas mot pour mot dans "
                 f"la preuve {issue.detail}."
             )
+        case IssueKind.QUOTE_UNKNOWN_ID:
+            return f"la citation « {issue.text} » cite la preuve {issue.detail}, qui n'existe pas."
+        case IssueKind.QUOTATION_MARKS if issue.paragraph is None:
+            return (
+                f"le titre « {issue.text} » contient des guillemets : le titre n'en contient "
+                "jamais."
+            )
+        case IssueKind.QUOTATION_MARKS:
+            return (
+                f"la phrase « {issue.text} » contient des guillemets : une citation directe va "
+                'dans un segment "quote", et une phrase "sentence" n\'en contient jamais.'
+            )
+        case IssueKind.EMPTY:
+            return "l'article ne contenait aucun segment."
 
 
 # --- quote check (Claude's part of point 3) --------------------------------------------------
@@ -184,14 +216,11 @@ def check_quote(quote: str, evidence_text: str) -> str | None:
 
 
 def remove_failed_quotes(draft: ArticleDraft, issues: list[Issue]) -> tuple[ArticleDraft, int]:
-    """Remove every quote flagged QUOTE_NOT_IN_EVIDENCE, then every paragraph left empty
-    (ADR-0011, point 1). Returns the new draft and the number of quotes removed. An article left
-    with no paragraph is returned as is: failing the job is the caller's decision."""
-    failed = {
-        (issue.paragraph, issue.segment)
-        for issue in issues
-        if issue.kind is IssueKind.QUOTE_NOT_IN_EVIDENCE
-    }
+    """Remove every quote flagged with a kind in `REMOVABLE_KINDS` (QUOTE_NOT_IN_EVIDENCE or
+    QUOTE_UNKNOWN_ID), then every paragraph left empty (ADR-0011 point 1, ADR-0012). Returns the
+    new draft and the number of quotes removed. Issues of other kinds remove nothing. An article
+    left with no paragraph is returned as is: failing the job is the caller's decision."""
+    failed = {(issue.paragraph, issue.segment) for issue in issues if issue.kind in REMOVABLE_KINDS}
     paragraphs: list[Paragraph] = []
     removed = 0
     for p_index, paragraph in enumerate(draft.paragraphs):
@@ -248,7 +277,9 @@ class Attempt:
 
 @dataclass(frozen=True)
 class ArticleResult:
-    article: ArticleDraft  # validated: known ids, every sentence cited, every quote checked
+    # validated: known ids, every sentence cited, every quote checked, no quotation mark outside
+    # quote segments
+    article: ArticleDraft
     attempts: tuple[Attempt, ...]  # one or two; the eval's validator counters read them
     removed_quotes: int
     model: str
@@ -265,16 +296,37 @@ class GenerationFailedError(Exception):
 
 
 def find_issues(draft: ArticleDraft, evidence: EvidenceSet) -> list[Issue]:
-    """Every problem of `draft`, in document order (paragraph, then segment).
+    """Every problem of `draft` (ADR-0009 point 4, ADR-0011, ADR-0012).
 
-    - A sentence with no id: NO_ID.
-    - A sentence or a quote citing an id not in `evidence`: UNKNOWN_ID, one issue per unknown
-      id, `detail` set to that id.
-    - A quote whose text `check_quote` does not find in its (known) evidence item:
+    Title:
+    - The title contains a quotation mark (`has_quotation_marks`): QUOTATION_MARKS, with
+      `paragraph` and `segment` None and `text` set to the title. The title cites nothing and
+      is not checked otherwise.
+
+    Draft:
+    - No segment at all (no paragraph, or only paragraphs with empty `segments`): EMPTY, with
+      `paragraph` and `segment` None and `text` empty. An empty paragraph next to non-empty
+      ones is not an issue.
+
+    Sentence segment:
+    - No id: NO_ID.
+    - Ids not in `evidence`: UNKNOWN_ID, one issue per unknown id in list order, `detail` set
+      to that id.
+    - Its text contains a quotation mark (`has_quotation_marks`; apostrophes do not count):
+      QUOTATION_MARKS.
+
+    Quote segment (at most one issue per quote):
+    - Its `evidence_id` is not in `evidence`: QUOTE_UNKNOWN_ID, `detail` set to that id.
+    - Otherwise, `check_quote` does not find its text in that evidence item:
       QUOTE_NOT_IN_EVIDENCE, `detail` set to the evidence id.
+    - Its `speaker` and `text` are not checked for quotation marks.
 
-    Each issue carries the 0-based `paragraph` and `segment` positions and the segment's `text`.
-    The title cites nothing and is not checked. A valid draft gives an empty list.
+    Every segment issue carries the 0-based `paragraph` and `segment` positions and the
+    segment's `text`.
+
+    Order: the title issue first, then EMPTY, then the segment issues in document order
+    (paragraph, then segment). Within one sentence, the id issues (NO_ID, or the UNKNOWN_ID
+    issues) come before QUOTATION_MARKS. A valid draft gives an empty list.
     """
     raise NotImplementedError("kata: Abdou writes find_issues")
 
@@ -289,9 +341,9 @@ async def generate_article(llm: StructuredGenerator, evidence: EvidenceSet) -> A
     2. No issue: return at once, one attempt, no quote removed.
     3. Otherwise call once more with the same prompt, then a blank line, then
        `retry_feedback(issues)`.
-    4. After the retry: UNPARSABLE, UNKNOWN_ID or NO_ID left: raise `GenerationFailedError`.
-       Only QUOTE_NOT_IN_EVIDENCE left: `remove_failed_quotes`; if no paragraph is left, raise
-       `GenerationFailedError`.
+    4. After the retry: any issue whose kind is not in `REMOVABLE_KINDS` left: raise
+       `GenerationFailedError`. Only removable issues left: `remove_failed_quotes`; if no
+       paragraph is left, raise `GenerationFailedError`.
     5. Return the article with every attempt (draft or raw text, issues, usage, latency), the
        number of removed quotes and `llm.model`.
 

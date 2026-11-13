@@ -26,7 +26,7 @@ Since 2026-11-09 the work is ordered in three stages; each one finishes before t
 | Stage | Goal | Status |
 |---|---|---|
 | 1 | Final v1 hallucination baseline: extractor choice ([ADR-0008](adr/0008-baseline-extractor-model.md)), B7 and R8, `extract`, `match`, human labeling, `report`. | Done on 2026-11-13 |
-| 2 | A vertical slice of v2: one link in, one sourced article out in Telegram, then measured with the baseline protocol against `page_text`. Out of scope: angle choice, WordPress, approval workflow, audio and video, pasted text, RAG. | Started on 2026-11-13: architecture decided ([ADR-0009](adr/0009-v2-link-to-sourced-article-slice.md), amended by [ADR-0011](adr/0011-failed-quote-is-removed.md) after the [independent review](reviews/2026-11-13-independent-review.md)) and comparison protocol fixed ([ADR-0010](adr/0010-v2-comparison-protocol.md)); code next. Target: 2026-11-22 at the latest. |
+| 2 | A vertical slice of v2: one link in, one sourced article out in Telegram, then measured with the baseline protocol against `page_text`. Out of scope: angle choice, WordPress, approval workflow, audio and video, pasted text, RAG. | Started on 2026-11-13: architecture decided ([ADR-0009](adr/0009-v2-link-to-sourced-article-slice.md), amended by [ADR-0011](adr/0011-failed-quote-is-removed.md) after the [independent review](reviews/2026-11-13-independent-review.md), and by [ADR-0012](adr/0012-validator-closes-three-gaps.md) for three validator rules) and comparison protocol fixed ([ADR-0010](adr/0010-v2-comparison-protocol.md)); code next. Target: 2026-11-22 at the latest. |
 | 3 | Production VM and real use by the team. | Not started |
 
 ## Next steps
