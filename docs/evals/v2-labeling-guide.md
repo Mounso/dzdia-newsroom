@@ -49,9 +49,13 @@ No language model fills, suggests or corrects a label.
 
 ## After a sitting
 
+Save the sheet as "CSV UTF-8" with `;` as separator, then:
+
 ```bash
 uv run python -m evals.v2.compare import-labels
 uv run python -m evals.v2.compare check-labels
 ```
 
 `check-labels` lists rows to read again, by key: a quote labeled `S` that the code does not find in the reference text; rows of one article with the same type and value but different labels; `locuteur` in the note of a row that is not a quote labeled `C`. A listed row is not necessarily wrong. Read it again, keep or change the label in the sheet, and import again.
+
+Do not run `export-labels` again between two sittings: a new export keeps only the rows that have no label, and a listed row must still be in the sheet to be corrected.
