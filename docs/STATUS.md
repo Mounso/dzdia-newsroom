@@ -67,9 +67,9 @@
   - `82833c2` : le palier 1 (ADR-0008, B7, R8, ligne globale par condition dans le rapport, `labels.jsonl`, `report.md` et la doc) ;
   - le dernier commit : la citation de tsa-02 passée en `C` (`page_text` 24/445), rapport et doc à jour (ce fichier compris).
 
-  Depuis, deux commits : `63bd98b` (réglages optionnels de l'éval dans `.env.example`, poussé), puis le commit du 2026-11-13, **commité mais pas encore poussé** (demander à Abdou avant de pousser) : l'étape 1 du palier 2 (ADR-0009, l'index des ADR, la revue du 2026-10-28, `roadmap.md`), la revue indépendante (`docs/reviews/2026-11-13-independent-review.md`), le sous-agent `.claude/agents/implementer.md` et ce fichier.
+  Depuis, trois commits, tous poussés : `63bd98b` (réglages optionnels de l'éval dans `.env.example`) ; `3cf625f`, le 2026-11-13 (l'étape 1 du palier 2 : ADR-0009, l'index des ADR, la revue du 2026-10-28, `roadmap.md` ; la revue indépendante `docs/reviews/2026-11-13-independent-review.md` ; le sous-agent `.claude/agents/implementer.md`) ; et un dernier commit qui met ce fichier à jour.
 
-  L'arbre de travail est propre ; tout est commité.
+  L'arbre de travail est propre ; tout est commité et poussé.
 
 - **Dépôt GitHub :** `origin` = https://github.com/Mounso/dzdia-newsroom. Tout est sur `main`. Le 2026-10-27, l'historique a été réécrit et poussé en force pour retirer les mentions de co-auteur : **aucun commit ne porte de ligne `Co-Authored-By`**, et il ne faut pas en ajouter.
 - **CI :** trois jobs, tous verts sur `c578779` et `d2e1090` (B6 compris) : `checks` 38 s, `audit` 11 s, `image` 2 min 08 (build arm64 sous QEMU compris). Le job `audit` tourne aussi chaque lundi. Dependabot a déjà fait un premier passage sur ses 4 écosystèmes, sans PR : tout était à jour.
