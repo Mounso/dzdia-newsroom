@@ -61,3 +61,7 @@ class ComparePaths:
     @property
     def check_log(self) -> Path:
         return self.dataset_dir / "checks.jsonl"
+
+    @property
+    def report(self) -> Path:
+        return self.dataset_dir / "report.md"

@@ -14,8 +14,11 @@ Steps:
 - `import-labels`: appends the filled rows of the sheet to the comparison's labels; blank rows
   stay pending; any unknown key or invalid label stops the import before anything is written.
 - `check-labels`: three mechanical checks on the labels, listed by article and key.
+- `report`: counts, rates with intervals, the paired differences and the conclusion, written to
+  the comparison's `report.md` and printed; an arm with a pending label gets counts only.
 
-No step prints model text, element values, element ids, arms or labels per row.
+No step prints model text, element values, element ids, arms or labels per row (the report
+names the arms, with counts and rates only).
 """
 
 import argparse
@@ -35,6 +38,7 @@ from evals.v2.compare.extract import (
 )
 from evals.v2.compare.labels import check_labels, check_lines, export_labels, import_labels
 from evals.v2.compare.paths import ComparePaths
+from evals.v2.compare.report import build_report
 from evals.v2.compare.run import (
     COMPARE_CONDITIONS,
     CompareCondition,
@@ -123,6 +127,13 @@ def cmd_check_labels(paths: ComparePaths) -> None:
         print(line)
 
 
+def cmd_report(paths: ComparePaths) -> None:
+    report = build_report(paths)
+    paths.report.parent.mkdir(parents=True, exist_ok=True)
+    paths.report.write_text(report, encoding="utf-8")
+    print(report)
+
+
 def main(argv: Sequence[str] | None = None) -> None:
     parser = argparse.ArgumentParser(
         prog="python -m evals.v2.compare",
@@ -140,6 +151,7 @@ def main(argv: Sequence[str] | None = None) -> None:
     steps.add_parser("export-labels", help="Write the blind CSV sheet of elements to label")
     steps.add_parser("import-labels", help="Import the filled rows of the sheet")
     steps.add_parser("check-labels", help="Run the three mechanical checks on the labels")
+    steps.add_parser("report", help="Write and print the comparison report")
 
     args = parser.parse_args(argv)
     paths = ComparePaths.default()
@@ -158,6 +170,8 @@ def main(argv: Sequence[str] | None = None) -> None:
                 cmd_import_labels(paths)
             case "check-labels":
                 cmd_check_labels(paths)
+            case "report":
+                cmd_report(paths)
     except CompareError as exc:
         sys.exit(str(exc))
 

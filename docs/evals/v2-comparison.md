@@ -30,9 +30,10 @@ flowchart LR
 | Step | Status | What it does |
 | --- | --- | --- |
 | `run` | Done on 2026-11-13 | Runs `v2` then `plain_prompt` on each of the 16 articles. |
-| `extract`, `match` | Written, not run | The baseline's extractor and matcher, on the plain output or the rendered v2 text. |
-| `export-labels`, `import-labels`, `check-labels` | Written, not run | The blind sheet, its import into a labels file of its own, and three mechanical checks. |
-| `report` | Planned | Rates per arm, paired differences with their intervals, guards, and the conclusion chosen by code. |
+| `extract`, `match` | Done on 2026-11-13 | The baseline's extractor and matcher, on the plain output or the rendered v2 text. |
+| `export-labels` | Done on 2026-11-13 | The blind sheet. |
+| `import-labels`, `check-labels` | Labeling under way | The import of the sheet into a labels file of its own, and three mechanical checks. |
+| `report` | Written; counts only until every label is in | Rates per arm, paired differences with their intervals, guards, and the conclusion chosen by code. |
 
 The harness reads the baseline's files and never writes them. The baseline command accepts only its own two conditions, `url_only` and `page_text`.
 
@@ -118,9 +119,44 @@ It appends its counts to `evals/datasets/v2_compare/checks.jsonl`. A flagged row
 
 No step prints an element value, an element id, an arm or a label.
 
+## The report
+
+```bash
+uv run python -m evals.v2.compare report
+```
+
+The step writes `evals/datasets/v2_compare/report.md` and prints it. The report holds counts, rates and settings only.
+
+**A verdict is a human label, nothing else.** There is no fallback to the matcher: an element without a label is pending. An arm is complete when every element of its articles has a label. Until then the report gives that arm its counts only (articles, elements, labeled, pending, median length): no rate, no count by type, no difference and no conclusion. There is no interim look at partial results.
+
+For a complete arm, the report gives:
+
+- the unsupported rate (`CONTRADICTED` + `NOT_IN_SOURCE`), the rate without quotes, the contradicted rate, and the share of articles with at least one unsupported element;
+- its quotes: stated, unsupported, and misattributed (a quote labeled `C` whose note contains `locuteur`); for v2 also kept and removed;
+- its number of elements against `page_text` on the articles they share. Under two thirds, the cell says that a lower rate may come from stating less (ADR-0010, point 12).
+
+**Intervals.** Percentile cluster bootstrap over articles, 10,000 resamples, seed 0, with the index convention of the v1 report. Rates are shown with one decimal.
+
+- A rate resamples the articles that have an output in the arm.
+- A difference (`v2 − page_text`, `plain_prompt − page_text`, `v2 − plain_prompt`) resamples the articles that have an output in both arms, and each resample takes the same articles in both. A resample where an arm has no element is skipped, and the report gives the number skipped.
+
+**The conclusion is chosen by code** from the interval of `v2 − page_text`, once both arms are complete:
+
+| Interval | Sentence |
+| --- | --- |
+| Upper end below 0 | v2 lowers the unsupported rate by X points, with the interval of the reduction. |
+| Lower end above 0 | v2 is worse; the cause must be investigated before any real use. |
+| Contains 0 | No detectable difference on N articles, with the estimate and its interval. |
+
+With more than two failed v2 generations, the report states the guard and gives no conclusion.
+
+The report also shows, with no label involved: the settings of each arm as recorded in the runs, the validator counters of v2 (issues at the first attempt by kind, retries, failures, quotes kept and removed), every line of the check log, the number of labels whose value changed, and a line if the labeling guide's hash differs from the one of the first export.
+
+Its fixed limits: an interval somewhat too narrow with 16 articles, one labeler, 74 earlier `page_text` labels given unblinded, new arms extracted later by a preview model, and a metric that sees entities and quotes only. The result of the temperature check is not in the generated report; it is in the [tryout page](v2-tryout.md).
+
 ## Results
 
-No rate yet: the elements are not extracted or labeled.
+No rate yet: the elements are extracted and matched, not labeled.
 
 ### The run (2026-11-13)
 
@@ -134,6 +170,24 @@ One pass of the `run` step with `gemini-3.1-flash-lite-preview`: 32 generations,
 - Both retries were triggered by one quote that was not in its cited evidence (`quote_not_in_evidence`). One retry fixed it; after the other the quote still failed and was removed.
 - 9 of the 16 v2 articles keep at least one quote.
 - No v2 generation failed, so the first guard of ADR-0010, point 12, does not apply.
-- The median v2 article is 0.90 times as long as the median plain one. Both are well under the 3,517 characters of the `page_text` articles; whether an arm states fewer than two thirds of the elements of `page_text` is known after extraction.
+- The median v2 article is 0.90 times as long as the median plain one. Both are well under the `page_text` articles (3,504.5 characters at the median, measured the same way, on the stripped text); whether an arm states fewer than two thirds of the elements of `page_text` is known after extraction.
 
 Only aggregate counters are written here. Per-article counters are not, because the person who labels must not be able to tell the arms apart.
+
+### Extraction and matching (2026-11-13)
+
+One pass of `extract` with `gemini-3.1-pro-preview` (thinking `low`), the extractor of the baseline's `page_text` article runs: 32 extractions, no error. Tokens: 17,904 in, 22,205 out, 29,582 thinking, about 0.66 USD at the prices of 2026-11-13. `match` then gave a status to the 421 elements.
+
+| Arm | Articles | Elements | Share of `page_text` |
+| --- | --- | --- | --- |
+| `page_text` | 16 | 256 (74 labeled in the baseline, 182 to label) | 1.00 |
+| `plain_prompt` | 16 | 227 | 0.89 |
+| `v2` | 16 | 194 | 0.76 |
+
+- The blind sheet will hold 603 rows: 421 from the new arms and 182 from `page_text`.
+- Both new arms state more than two thirds of the elements of `page_text`, although their articles are less than half as long. On these totals the second guard of ADR-0010, point 12, does not apply; the report decides it by code.
+- No count by type or by match status is given per arm before the labels are complete.
+
+### The blind sheet (2026-11-13)
+
+First export: 603 rows, 17 to 82 per article. The labeling guide is frozen from this export; its hash is in `evals/datasets/v2_compare/exports.jsonl`.
