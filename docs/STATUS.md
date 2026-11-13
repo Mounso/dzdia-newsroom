@@ -1,4 +1,4 @@
-# Statut — 2026-11-13 (palier 2, étape 3 : spécification du kata complétée par l'ADR-0012, commitée en local, pas encore poussée ; reste le kata d'Abdou)
+# Statut — 2026-11-13 (palier 2, étape 3 : spécification du kata complétée par l'ADR-0012 et poussée sur `main` ; reste le kata d'Abdou)
 
 ## Pour reprendre dans une nouvelle session
 - **Étape 3 du palier 2 : la partie de Claude est faite (session Opus, 2026-11-13) et poussée sur `main` (`030f039`).** Abdou a validé « tout » : options 1a (découpage des preuves), 2a (fonctions pures + orchestration), 3a (rendu `Locuteur : « mots »`), petits choix p1 à p6, corrections de C-1 et C-2, spike.
@@ -111,7 +111,7 @@
 
   Puis, le 2026-11-13, tous poussés : `030f039`, la partie de Claude de l'étape 3 du palier 2 (`llm/`, `tools/evidence.py`, `tools/article.py`, C-1, C-2, la doc, la section « Decisions » de la revue et ce fichier), et un dernier commit qui met ce fichier à jour.
 
-  Puis, le 2026-11-13, **un commit local, pas encore poussé** (Abdou n'a pas encore dit de pousser) : l'ADR-0012, l'index des ADR, les lignes « Amended by » de l'ADR-0009 et « Related » de l'ADR-0010, `roadmap.md`, `architecture/overview.md`, la spécification du kata (`tools/article.py` hors kata, `tests/tools/test_article.py`, `tests/tools/test_article_kata.py`), `.env.example` et ce fichier. L'arbre de travail est propre, hors fichiers locaux.
+  Puis, le 2026-11-13, tous poussés : `560e136` et un dernier commit qui met ce fichier à jour. `560e136` contient l'ADR-0012, l'index des ADR, les lignes « Amended by » de l'ADR-0009 et « Related » de l'ADR-0010, `roadmap.md`, `architecture/overview.md`, la spécification du kata (`tools/article.py` hors kata, `tests/tools/test_article.py`, `tests/tools/test_article_kata.py`), `.env.example` et ce fichier. L'arbre de travail est propre, hors fichiers locaux.
 
 - **Dépôt GitHub :** `origin` = https://github.com/Mounso/dzdia-newsroom. Tout est sur `main`. Le 2026-10-27, l'historique a été réécrit et poussé en force pour retirer les mentions de co-auteur : **aucun commit ne porte de ligne `Co-Authored-By`**, et il ne faut pas en ajouter.
 - **CI :** trois jobs, tous verts sur `c578779` et `d2e1090` (B6 compris) : `checks` 38 s, `audit` 11 s, `image` 2 min 08 (build arm64 sous QEMU compris). Le job `audit` tourne aussi chaque lundi. Dependabot a déjà fait un premier passage sur ses 4 écosystèmes, sans PR : tout était à jour.
