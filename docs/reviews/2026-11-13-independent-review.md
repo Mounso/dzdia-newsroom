@@ -2,6 +2,22 @@
 
 A second, independent review of dzdia-newsroom, written before ADR-0009 (the v2 slice) is coded. It was read-only: no existing file was changed, nothing was committed, and the human labels were not touched.
 
+## Decisions
+
+Added after the review; the findings below are unchanged. A finding not listed here is neither accepted nor refused.
+
+| Finding | Decision (Abdou) | Date | Where |
+|---|---|---|---|
+| V-1 | Accepted: a failed quote is removed; the sources message gives only the count | 2026-11-13 | [ADR-0011](../adr/0011-failed-quote-is-removed.md), which amends ADR-0009 |
+| V-2 | Accepted: every quote is labeled by hand for its speaker; no code guard on the speaker in this slice | 2026-11-13 | [ADR-0010](../adr/0010-v2-comparison-protocol.md), point 7 |
+| V-3 | Accepted: the conclusion for each outcome is written before the run | 2026-11-13 | ADR-0010, points 9 to 11 |
+| V-4 | Accepted: every element of the article task is labeled in every arm | 2026-11-13 | ADR-0010, point 6 |
+| V-5 | Accepted: a mandatory `plain_prompt` arm; validator counters instead of a "v2 without validator" arm | 2026-11-13 | ADR-0010, points 2, 10 and 11 |
+| V-6 | Taken into account: temperature is checked by a few calls before the run | 2026-11-13 | ADR-0010, point 13 |
+| V-10 | Taken into account for the eval: every arm receives the frozen snapshot text | 2026-11-13 | ADR-0010, point 3 |
+| E-5 | Accepted: blind labeling, guide frozen before the export, committed check scripts | 2026-11-13 | ADR-0010, point 8 |
+| V-12 | Accepted: generation and eval come before fetching, the SSRF guard and Telegram | 2026-11-13 | [Roadmap](../roadmap.md#next-steps) |
+
 ## Scope and method
 
 - **Read in full:** `docs/STATUS.md`, `docs/README.md`, `docs/roadmap.md`, ADRs 0001 to 0009, `docs/evals/baseline-v1.md`, `evals/datasets/baseline_v1/` (report, sample, feeds, labels), all of `src/`, all of `evals/baseline_v1/`, `deploy/*.sh`, `Dockerfile`, `docker-compose.yml`, `Caddyfile`, `.github/workflows/ci.yml`, `pyproject.toml`, `docs/architecture/security.md`. The 2026-10-28 design review was read last, after my own findings were listed, to mark what is already tracked.
