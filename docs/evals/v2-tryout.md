@@ -64,6 +64,20 @@ uv run python -m evals.v2.tryout issues
 
 The step prints, for each attempt, the kind of each issue, its position, the id involved and the flagged text. It prints nothing else of the model output, and only the length of an unparsable answer. Reading whole drafts would tune the prompt to the reader's taste rather than to the errors.
 
+## Temperature check
+
+ADR-0010 (point 13) asks to verify, not assume, that temperature 0 has an effect on this model. A committed step repeats each arm with the frozen prompts ([ADR-0013](../adr/0013-v2-comparison-harness.md), point 10):
+
+```bash
+uv run python -m evals.v2.tryout determinism
+```
+
+It uses two tryout pages, the first of each outlet in the page list. On each page it calls the plain arm three times at temperature 0 and three times at 1, and the v2 arm three times at 0: 18 generations. Each call records the hash and the length of its output, never the text. The step prints, per page, arm and temperature, how many distinct outputs the repeats gave. It refuses to run with a prompt that differs from its pin, and it is idempotent like `run`.
+
+The result does not block the eval run. One generation per article is the rule either way; the check says whether a second run of the eval would give the same articles.
+
+Result: not run yet.
+
 ## Results
 
 Round 1, 2026-11-13, `gemini-3.1-flash-lite-preview`, temperature 0. Prompt fingerprints: `b9e5672bfd4d` (`v2-article-1`), `5026941ef6b3` (`v1-plain-1`). Twelve runs, no technical error.

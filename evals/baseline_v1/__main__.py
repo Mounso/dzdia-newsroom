@@ -4,7 +4,7 @@ import argparse
 import asyncio
 import sys
 from collections.abc import Sequence
-from typing import cast, get_args
+from typing import cast
 
 import httpx
 
@@ -23,6 +23,7 @@ from evals.baseline_v1.sample import (
     load_sampling_config,
 )
 from evals.baseline_v1.schemas import (
+    V1_CONDITIONS,
     Condition,
     ElementRecord,
     ExtractionRecord,
@@ -244,9 +245,7 @@ def main(argv: Sequence[str] | None = None) -> None:
     review = steps.add_parser("review-done", help="Mark snapshot texts as reviewed by hand")
     review.add_argument("item_ids", nargs="+")
     run = steps.add_parser("run", help="Run the frozen v1 prompts")
-    run.add_argument(
-        "--conditions", nargs="+", choices=get_args(Condition), default=list(get_args(Condition))
-    )
+    run.add_argument("--conditions", nargs="+", choices=V1_CONDITIONS, default=list(V1_CONDITIONS))
     run.add_argument("--allow-unreviewed", action="store_true")
     steps.add_parser("extract", help="Extract critical elements from the outputs (LLM)")
     match = steps.add_parser("match", help="Look for each element in the reference text (code)")

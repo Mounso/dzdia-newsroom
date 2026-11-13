@@ -37,6 +37,11 @@ from dzdia_newsroom.tools.evidence import EvidenceSet, build_evidence
 PLAIN_PROMPT_VERSION = "v1-plain-1"
 PLAIN_TEMPERATURE = 0.0  # same generation settings as v2 (ADR-0010, point 2)
 
+# The settings each arm sends, recorded with every output (ADR-0010, point 13). The v2 pipeline
+# sets temperature 0 and the `ArticleDraft` schema inside `GeminiClient.generate_structured`.
+V2_SETTINGS: dict[str, float | str] = {"temperature": 0.0, "response_schema": "ArticleDraft"}
+PLAIN_SETTINGS: dict[str, float | str] = {"temperature": PLAIN_TEMPERATURE}
+
 _PLAIN_FORMAT = """\
 Format de la réponse : le titre sur la première ligne, puis les paragraphes séparés par une \
 ligne vide. Texte brut, sans markdown."""
@@ -226,3 +231,17 @@ def v2_prompt_fingerprint() -> str:
 def plain_prompt_fingerprint() -> str:
     """sha256 of the plain prompt without source text."""
     return _sha256(build_plain_prompt(""))
+
+
+def frozen_prompt_mismatches() -> list[str]:
+    """One message per prompt whose fingerprint differs from its pin; empty when both prompts
+    are the frozen ones (ADR-0010, point 4). Always checks both prompts."""
+    return [
+        f"The {arm} prompt fingerprint {computed} differs from its pin {pinned}: the prompt is "
+        "not the frozen one."
+        for arm, computed, pinned in (
+            ("v2", v2_prompt_fingerprint(), V2_PROMPT_FINGERPRINT),
+            ("plain_prompt", plain_prompt_fingerprint(), PLAIN_PROMPT_FINGERPRINT),
+        )
+        if computed != pinned
+    ]

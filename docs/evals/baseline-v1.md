@@ -17,7 +17,7 @@ v1 sends the raw URL to the model and never downloads the page. How much of what
 | Metrics | Share of unsupported elements (by type and overall); share of outputs with at least one unsupported element; share of contradicted elements. |
 | Sample | 16 recent articles from the RSS feeds of TSA Algérie and Algérie 360 (8 each), plus 4 duplicates of TSA articles reached through an opaque `?p=ID` URL, to isolate the effect of the slug. Paywalled articles are excluded. |
 | Reference text | Article page frozen once (HTML, extracted text, SHA-256), headline included, "À LIRE AUSSI" cross-links removed, checked before use. |
-| Conditions | `url_only` (v1 as shipped: the prompt receives the URL), `page_text` (same v1 prompts, given the real page text), `v2` later. |
+| Conditions | `url_only` (v1 as shipped: the prompt receives the URL), `page_text` (same v1 prompts, given the real page text). The v2 arms run in a separate command, the [v2 comparison](v2-comparison.md), which reuses the `page_text` article runs. |
 | Repetitions | 3 summaries and 1 article per item and condition. |
 | Model | v1 prompts copied verbatim (`v1-frozen`) with v1's model, `gemini-3.1-flash-lite-preview`, default parameters. |
 | Extractor | `gemini-3.1-pro-preview`, thinking level `low`, temperature 0, structured output ([ADR-0008](../adr/0008-baseline-extractor-model.md)). |

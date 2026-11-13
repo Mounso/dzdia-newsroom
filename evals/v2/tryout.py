@@ -9,7 +9,9 @@ Steps:
 - `counters`: per-page counters and the verdict of the freeze conditions (option T2);
 - `issues`: after a REVISE verdict, the segments the v2 validator flagged (kind, position, id,
   flagged text) and nothing else of the model output: no draft, no rendered or raw text
-  (decision U1).
+  (decision U1);
+- `determinism`: the temperature check of ADR-0013, point 10 (`evals/v2/determinism.py`): the
+  hash and length of repeated outputs, never their text; idempotent.
 
 Committed: `evals/datasets/v2_tryout/pages.jsonl` (metadata only). Local only (`evals/.data/`):
 the snapshots and the model outputs.
@@ -52,12 +54,18 @@ from evals.baseline_v1.schemas import SampleItem, SnapshotMeta
 from evals.baseline_v1.snapshot import ExtractionError, extract_main_text, sha256_text
 from evals.v2.arms import (
     PLAIN_PROMPT_VERSION,
-    PLAIN_TEMPERATURE,
+    PLAIN_SETTINGS,
+    V2_SETTINGS,
     plain_prompt_fingerprint,
     run_plain,
     run_v2,
     v2_prompt_fingerprint,
 )
+
+# Defined in `evals.v2.records` (shared with the comparison); re-exported for existing callers.
+from evals.v2.records import AttemptRecord as AttemptRecord
+from evals.v2.records import IssueDetailRecord as IssueDetailRecord
+from evals.v2.records import issue_kinds, plain_fields, v2_fields
 
 logger = logging.getLogger(__name__)
 
@@ -80,9 +88,6 @@ MAX_QUOTATION_MARK_PAGES = 1  # pages with `quotation_marks` at the first attemp
 MAX_RETRIED_PAGES = 2  # pages where the retry was used
 MAX_REMOVED_QUOTES = 1  # removed quotes, all pages together
 MIN_LENGTH_RATIO = Fraction(2, 3)  # median v2 output length / median plain output length
-
-V2_SETTINGS: dict[str, float | str] = {"temperature": 0.0, "response_schema": "ArticleDraft"}
-PLAIN_SETTINGS: dict[str, float | str] = {"temperature": PLAIN_TEMPERATURE}
 
 _EVALS_DIR = Path(__file__).resolve().parent.parent
 
@@ -117,6 +122,10 @@ class TryoutPaths:
     def runs(self) -> Path:
         return self.data_dir / "runs.jsonl"
 
+    @property
+    def determinism(self) -> Path:
+        return self.data_dir / "determinism.jsonl"
+
     def html_path(self, page_id: str) -> Path:
         return self.snapshot_dir / f"{page_id}.html"
 
@@ -140,27 +149,6 @@ class TryoutPage(BaseModel):
     n_chars: int
     n_quoted: int
     n_numbers: int
-
-
-class IssueDetailRecord(BaseModel):
-    """One issue of an attempt (decision U1): read by the `issues` step."""
-
-    kind: str
-    paragraph: int | None = None
-    segment: int | None = None
-    text: str = ""  # the flagged segment's text, or the title
-    detail: str = ""  # e.g. the unknown or cited evidence id
-
-
-class AttemptRecord(BaseModel):
-    issues: dict[str, int]  # number of issues per kind
-    input_tokens: int | None = None
-    output_tokens: int | None = None
-    thinking_tokens: int | None = None
-    latency_ms: int | None = None
-    raw_text: str | None = None  # unparsable outputs only
-    # In the order the validator reports them; empty in records written before decision U1.
-    issue_details: list[IssueDetailRecord] = []
 
 
 class TryoutRun(BaseModel):
@@ -595,58 +583,12 @@ async def _execute(
     )
     try:
         if arm == "plain":
-            plain = await run_plain(llm, text)
-            return record.model_copy(
-                update={
-                    "output_text": plain.text,
-                    "n_output_chars": len(plain.text.strip()),
-                    "input_tokens": plain.usage.input_tokens,
-                    "output_tokens": plain.usage.output_tokens,
-                    "latency_ms": plain.latency_ms,
-                }
-            )
-        v2 = await run_v2(llm, text)
+            fields = plain_fields(await run_plain(llm, text))
+        else:
+            fields = v2_fields(await run_v2(llm, text))
     except Exception as exc:  # a technical error must not abort the batch
         return record.model_copy(update={"error": repr(exc)})
-    usage = v2.usage
-    return record.model_copy(
-        update={
-            "outcome": v2.outcome,
-            "n_evidence": v2.n_evidence,
-            "attempts": [
-                AttemptRecord(
-                    issues=a.issues,
-                    input_tokens=a.usage.input_tokens,
-                    output_tokens=a.usage.output_tokens,
-                    thinking_tokens=a.usage.thinking_tokens,
-                    latency_ms=a.latency_ms,
-                    raw_text=a.raw_text,
-                    issue_details=[
-                        IssueDetailRecord(
-                            kind=d.kind,
-                            paragraph=d.paragraph,
-                            segment=d.segment,
-                            text=d.text,
-                            detail=d.detail,
-                        )
-                        for d in a.issue_details
-                    ],
-                )
-                for a in v2.attempts
-            ],
-            "retried": v2.retried,
-            "removed_quotes": v2.removed_quotes,
-            "kept_quotes": v2.kept_quotes,
-            "n_sentences": v2.n_sentences,
-            "rendered_text": v2.rendered_text,
-            "draft": v2.draft,
-            "n_output_chars": len(v2.rendered_text.strip()) if v2.rendered_text else None,
-            "input_tokens": usage.input_tokens,
-            "output_tokens": usage.output_tokens,
-            "thinking_tokens": usage.thinking_tokens,
-            "latency_ms": v2.latency_ms,
-        }
-    )
+    return record.model_copy(update=fields)
 
 
 def fingerprint_of(arm: Arm) -> str:
@@ -661,7 +603,7 @@ def run_line(record: TryoutRun) -> str:
     latency = f"{(record.latency_ms or 0) / 1000:.1f} s"
     if record.arm == "plain":
         return f"{head} {record.n_output_chars} chars, {latency}"
-    issues = " | ".join(_kinds(a.issues) for a in record.attempts)
+    issues = " | ".join(issue_kinds(a.issues) for a in record.attempts)
     return (
         f"{head} {record.outcome}, retried {'yes' if record.retried else 'no'}, issues {issues}, "
         f"kept {record.kept_quotes}, removed {record.removed_quotes}, "
@@ -706,10 +648,6 @@ async def run_tryout(
 
 
 # --- counters and verdict --------------------------------------------------------------------
-
-
-def _kinds(issues: Mapping[str, int]) -> str:
-    return ",".join(f"{kind}={n}" for kind, n in sorted(issues.items())) or "-"
 
 
 def latest_fingerprints(runs: Iterable[TryoutRun]) -> dict[Arm, str]:
@@ -829,9 +767,9 @@ def print_counters(
         elif r.error:
             v2_cell = f"ERROR {r.error[:80]}"
         else:
-            attempt_2 = _kinds(r.attempts[1].issues) if len(r.attempts) > 1 else "-"
+            attempt_2 = issue_kinds(r.attempts[1].issues) if len(r.attempts) > 1 else "-"
             v2_cell = (
-                f"{r.outcome} {'yes' if r.retried else 'no'} {_kinds(r.attempts[0].issues)} | "
+                f"{r.outcome} {'yes' if r.retried else 'no'} {issue_kinds(r.attempts[0].issues)} | "
                 f"{attempt_2} {r.kept_quotes} {r.removed_quotes} {r.n_sentences} "
                 f"{r.n_output_chars}"
             )
@@ -919,7 +857,7 @@ def issue_lines(
         for number, attempt in enumerate(record.attempts, start=1):
             head = f"{page_id} attempt {number}"
             if attempt.issues and not attempt.issue_details:
-                lines.append(f"{head} {_kinds(attempt.issues)} (details not recorded)")
+                lines.append(f"{head} {issue_kinds(attempt.issues)} (details not recorded)")
             for d in attempt.issue_details:
                 if d.kind == "unparsable":
                     lines.append(f"{head} unparsable raw text {len(attempt.raw_text or '')} chars")
@@ -1018,6 +956,9 @@ def main(argv: Sequence[str] | None = None) -> None:
     flagged = steps.add_parser("issues", help="The segments the v2 validator flagged, only")
     flagged.add_argument("--fingerprint-v2")
     flagged.add_argument("--pages", nargs="+", default=[], metavar="PAGE_ID")
+    steps.add_parser(
+        "determinism", help="Repeat each arm on 2 pages and count distinct outputs (no text)"
+    )
 
     args = parser.parse_args(argv)
     paths = TryoutPaths.default()
@@ -1035,9 +976,19 @@ def main(argv: Sequence[str] | None = None) -> None:
                 counters(paths, args.fingerprint_v2, args.fingerprint_plain)
             case "issues":
                 issues(paths, args.fingerprint_v2, args.pages)
+            case "determinism":
+                # Imported here: `evals.v2.determinism` imports this module.
+                from evals.v2.determinism import cmd_determinism
+
+                asyncio.run(cmd_determinism(paths, _gemini()))
     except TryoutError as exc:
         sys.exit(str(exc))
 
 
 if __name__ == "__main__":
-    main()
+    # Run the copy imported as `evals.v2.tryout`, the one `evals.v2.determinism` imports: under
+    # `python -m`, this file is also loaded as `__main__`, and a `TryoutError` raised by the other
+    # copy would not be caught by this copy's `main`.
+    from evals.v2 import tryout
+
+    tryout.main()

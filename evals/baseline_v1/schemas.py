@@ -5,7 +5,11 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
-Condition = Literal["url_only", "page_text"]
+# `plain_prompt` and `v2` are the new arms of the v2 comparison (ADR-0010, point 2), run by
+# `evals.v2.compare`. The baseline command and `plan_jobs` accept `V1_CONDITIONS` only (ADR-0013,
+# point 1): the v1 prompts must never run under the new conditions.
+Condition = Literal["url_only", "page_text", "plain_prompt", "v2"]
+V1_CONDITIONS: tuple[Condition, ...] = ("url_only", "page_text")
 Task = Literal["summary", "article"]
 ElementType = Literal["person", "organization", "place", "number", "date", "quote"]
 Label = Literal["SUPPORTED", "CONTRADICTED", "NOT_IN_SOURCE"]

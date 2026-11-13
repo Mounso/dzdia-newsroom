@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 
 from dzdia_newsroom.llm import TextGenerator
-from evals.baseline_v1.schemas import Condition, RunRecord, SampleItem, Task
+from evals.baseline_v1.schemas import V1_CONDITIONS, Condition, RunRecord, SampleItem, Task
 from evals.baseline_v1.v1_prompts import PROMPT_VERSION, build_prompt
 
 REPEATS: Mapping[Task, int] = {"summary": 3, "article": 1}
@@ -29,6 +29,10 @@ def plan_jobs(
     repeats: Mapping[Task, int] = REPEATS,
 ) -> list[RunJob]:
     conditions = list(conditions)
+    others = [c for c in conditions if c not in V1_CONDITIONS]
+    if others:
+        # The v1 prompts run under the v1 conditions only (ADR-0013, point 1).
+        raise ValueError(f"Not a v1 condition: {others}; the baseline runs {list(V1_CONDITIONS)}")
     jobs: list[RunJob] = []
     for item in items:
         for condition in conditions:

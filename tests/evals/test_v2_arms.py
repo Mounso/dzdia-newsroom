@@ -177,3 +177,15 @@ def test_the_plain_fingerprint_follows_the_prompt(monkeypatch: pytest.MonkeyPatc
     before = plain_prompt_fingerprint()
     monkeypatch.setattr(arms, "_PLAIN_FORMAT", "Format libre.")
     assert plain_prompt_fingerprint() != before
+
+
+def test_frozen_prompt_mismatches_checks_both_prompts(monkeypatch: pytest.MonkeyPatch) -> None:
+    assert arms.frozen_prompt_mismatches() == []
+    monkeypatch.setattr(arms, "_PLAIN_FORMAT", "Format libre.")
+    [plain] = arms.frozen_prompt_mismatches()
+    assert plain.startswith("The plain_prompt prompt fingerprint ")
+    assert f"differs from its pin {PLAIN_PROMPT_FINGERPRINT}" in plain
+    monkeypatch.setattr(article, "_FORMAT_RULES", article._FORMAT_RULES + " Sois bref.")
+    v2, plain = arms.frozen_prompt_mismatches()
+    assert v2.startswith("The v2 prompt fingerprint ")
+    assert f"differs from its pin {V2_PROMPT_FINGERPRINT}" in v2
