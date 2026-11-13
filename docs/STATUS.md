@@ -86,7 +86,7 @@
 
   Depuis, trois commits, tous poussés : `63bd98b` (réglages optionnels de l'éval dans `.env.example`) ; `3cf625f`, le 2026-11-13 (l'étape 1 du palier 2 : ADR-0009, l'index des ADR, la revue du 2026-10-28, `roadmap.md` ; la revue indépendante `docs/reviews/2026-11-13-independent-review.md` ; le sous-agent `.claude/agents/implementer.md`) ; et un dernier commit qui met ce fichier à jour.
 
-  Puis un commit du 2026-11-13, **commité mais pas encore poussé** (Abdou n'a pas demandé le push) : les ADR-0010 et 0011, l'index des ADR, les lignes « Amended by » des ADR-0001 et 0009, `roadmap.md`, la section « Decisions » de la revue indépendante et ce fichier. L'arbre de travail est propre.
+  Puis, le 2026-11-13, tous poussés : `ba2108e` (les ADR-0010 et 0011, l'index des ADR, les lignes « Amended by » des ADR-0001 et 0009, `roadmap.md`, la section « Decisions » de la revue indépendante et ce fichier) et un dernier commit qui met ce fichier à jour. L'arbre de travail est propre.
 
 - **Dépôt GitHub :** `origin` = https://github.com/Mounso/dzdia-newsroom. Tout est sur `main`. Le 2026-10-27, l'historique a été réécrit et poussé en force pour retirer les mentions de co-auteur : **aucun commit ne porte de ligne `Co-Authored-By`**, et il ne faut pas en ajouter.
 - **CI :** trois jobs, tous verts sur `c578779` et `d2e1090` (B6 compris) : `checks` 38 s, `audit` 11 s, `image` 2 min 08 (build arm64 sous QEMU compris). Le job `audit` tourne aussi chaque lundi. Dependabot a déjà fait un premier passage sur ses 4 écosystèmes, sans PR : tout était à jour.
