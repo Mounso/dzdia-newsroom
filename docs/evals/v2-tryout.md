@@ -76,7 +76,20 @@ It uses two tryout pages, the first of each outlet in the page list. On each pag
 
 The result does not block the eval run. One generation per article is the rule either way; the check says whether a second run of the eval would give the same articles.
 
-Result: not run yet.
+Result, 2026-11-13, `gemini-3.1-flash-lite-preview`, frozen prompts, 18 calls, no technical error and no failed v2 generation:
+
+| Page | Arm | Temperature | Repeats | Distinct outputs | Length (chars) |
+| --- | --- | --- | --- | --- | --- |
+| `tryout-00` | plain | 0 | 3 | 1 | 1,593 |
+| `tryout-00` | plain | 1 | 3 | 3 | 1,382 to 1,684 |
+| `tryout-00` | v2 | 0 | 3 | 1 | 1,114 |
+| `tryout-02` | plain | 0 | 3 | 1 | 1,305 |
+| `tryout-02` | plain | 1 | 3 | 3 | 1,172 to 1,271 |
+| `tryout-02` | v2 | 0 | 3 | 1 | 981 |
+
+Temperature has an effect on this model: at 0 the three outputs of each arm are identical on both pages, and at 1 the plain arm gives three different outputs on both. The plain arm (free text) had not been checked before; the earlier spike had only checked structured output.
+
+What this does not show: three repeats on two pages, within a few minutes, do not prove that every article would come out identical, nor that the same call gives the same output on another day. The model is a preview and can change. The eval still runs each article once and records the settings sent with each output.
 
 ## Results
 
