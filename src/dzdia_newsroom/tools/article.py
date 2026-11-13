@@ -4,20 +4,24 @@ The model writes a structured draft where every sentence cites evidence ids and 
 names the one evidence item it is copied from. Code checks the draft, asks once more with the
 list of errors, then removes quotes that still fail and fails the job on anything else.
 
-Split of the work (ADR-0009, "Kata split"): `find_issues` and `generate_article` are Abdou's
-kata; their signatures, docstrings and tests are the specification. Everything else here is
-written by Claude.
+The docstrings of `find_issues` and `generate_article` are their specification, with the tests
+in `tests/tools/test_article_generation.py`.
 """
 
+import logging
 import unicodedata
+from collections import Counter
+from collections.abc import Iterable
 from dataclasses import dataclass
 from enum import StrEnum
 from typing import Literal
 
 from pydantic import BaseModel, Field
 
-from dzdia_newsroom.llm import StructuredGenerator, Usage
+from dzdia_newsroom.llm import StructuredGenerator, StructuredOutputError, Usage
 from dzdia_newsroom.tools.evidence import EvidenceSet
+
+logger = logging.getLogger(__name__)
 
 PROMPT_VERSION = "v2-article-1"  # draft: frozen before the v2 eval run (ADR-0010, point 4)
 
@@ -169,7 +173,7 @@ def _describe_issue(issue: Issue) -> str:
             return "l'article ne contenait aucun segment."
 
 
-# --- quote check (Claude's part of point 3) --------------------------------------------------
+# --- quote check (ADR-0009, point 3) ---------------------------------------------------------
 
 _FOLD = str.maketrans(
     {"’": "'", "‘": "'", "ʼ": "'", "«": '"', "»": '"', "“": '"', "”": '"', "„": '"'}
@@ -261,7 +265,7 @@ def render_text(article: ArticleDraft, evidence: EvidenceSet) -> str:
     return "\n\n".join(block for block in blocks if block)
 
 
-# --- validation and retry (Abdou's kata: specification only) ---------------------------------
+# --- validation and retry (ADR-0009 point 4, ADR-0011, ADR-0012) -----------------------------
 
 
 @dataclass(frozen=True)
@@ -328,7 +332,46 @@ def find_issues(draft: ArticleDraft, evidence: EvidenceSet) -> list[Issue]:
     (paragraph, then segment). Within one sentence, the id issues (NO_ID, or the UNKNOWN_ID
     issues) come before QUOTATION_MARKS. A valid draft gives an empty list.
     """
-    raise NotImplementedError("kata: Abdou writes find_issues")
+    issues: list[Issue] = []
+    if has_quotation_marks(draft.title):
+        issues.append(Issue(IssueKind.QUOTATION_MARKS, text=draft.title))
+    if not any(paragraph.segments for paragraph in draft.paragraphs):
+        issues.append(Issue(IssueKind.EMPTY))
+    known_ids = evidence.ids
+    for p_index, paragraph in enumerate(draft.paragraphs):
+        for s_index, segment in enumerate(paragraph.segments):
+            if isinstance(segment, SentenceSegment):
+                problems = _sentence_problems(segment, known_ids)
+            else:
+                problems = _quote_problems(segment, evidence)
+            for kind, detail in problems:
+                issues.append(Issue(kind, p_index, s_index, text=segment.text, detail=detail))
+    return issues
+
+
+def _sentence_problems(
+    sentence: SentenceSegment, known_ids: frozenset[str]
+) -> list[tuple[IssueKind, str]]:
+    """(kind, detail) of each problem of one sentence, in the order `find_issues` reports."""
+    problems: list[tuple[IssueKind, str]] = []
+    if not sentence.evidence_ids:
+        problems.append((IssueKind.NO_ID, ""))
+    for evidence_id in sentence.evidence_ids:
+        if evidence_id not in known_ids:
+            problems.append((IssueKind.UNKNOWN_ID, evidence_id))
+    if has_quotation_marks(sentence.text):
+        problems.append((IssueKind.QUOTATION_MARKS, ""))
+    return problems
+
+
+def _quote_problems(quote: QuoteSegment, evidence: EvidenceSet) -> list[tuple[IssueKind, str]]:
+    """The problem of one quote as (kind, detail), at most one."""
+    item = evidence.get(quote.evidence_id)
+    if item is None:
+        return [(IssueKind.QUOTE_UNKNOWN_ID, quote.evidence_id)]
+    if check_quote(quote.text, item.text) is None:
+        return [(IssueKind.QUOTE_NOT_IN_EVIDENCE, quote.evidence_id)]
+    return []
 
 
 async def generate_article(llm: StructuredGenerator, evidence: EvidenceSet) -> ArticleResult:
@@ -349,4 +392,75 @@ async def generate_article(llm: StructuredGenerator, evidence: EvidenceSet) -> A
 
     At most two calls, whatever happens.
     """
-    raise NotImplementedError("kata: Abdou writes generate_article")
+    prompt = build_prompt(evidence)
+    first = await _attempt(llm, prompt, evidence)
+    if first.draft is not None and not first.issues:
+        _log_outcome(llm.model, (first,), "ok", removed_quotes=0)
+        return ArticleResult(
+            article=first.draft, attempts=(first,), removed_quotes=0, model=llm.model
+        )
+
+    retry_prompt = f"{prompt}\n\n{retry_feedback(list(first.issues))}"
+    second = await _attempt(llm, retry_prompt, evidence)
+    attempts = (first, second)
+    blocking = [issue for issue in second.issues if issue.kind not in REMOVABLE_KINDS]
+    if second.draft is None or blocking:  # no draft always comes with an UNPARSABLE issue
+        _log_outcome(llm.model, attempts, "failed", removed_quotes=0)
+        raise GenerationFailedError(
+            f"issues left after the retry: {_count_kinds(blocking)}", attempts=attempts
+        )
+
+    article, removed = remove_failed_quotes(second.draft, list(second.issues))
+    if not article.paragraphs:
+        _log_outcome(llm.model, attempts, "failed", removed_quotes=removed)
+        raise GenerationFailedError(
+            f"no paragraph left after removing {removed} quote(s)", attempts=attempts
+        )
+    _log_outcome(llm.model, attempts, "ok", removed_quotes=removed)
+    return ArticleResult(
+        article=article, attempts=attempts, removed_quotes=removed, model=llm.model
+    )
+
+
+async def _attempt(llm: StructuredGenerator, prompt: str, evidence: EvidenceSet) -> Attempt:
+    """One model call and its issues. Only `StructuredOutputError` becomes an UNPARSABLE
+    attempt; any other exception propagates."""
+    try:
+        structured = await llm.generate_structured(prompt, ArticleDraft)
+    except StructuredOutputError as exc:
+        return Attempt(
+            draft=None,
+            issues=(Issue(IssueKind.UNPARSABLE),),
+            usage=exc.usage,
+            latency_ms=exc.latency_ms,
+            raw_text=exc.raw_text,
+        )
+    draft = structured.value
+    return Attempt(
+        draft=draft,
+        issues=tuple(find_issues(draft, evidence)),
+        usage=structured.usage,
+        latency_ms=structured.latency_ms,
+    )
+
+
+def _count_kinds(issues: Iterable[Issue]) -> dict[str, int]:
+    """Number of issues per kind, e.g. `{"no_id": 2}`: safe to log, holds no model text."""
+    return dict(Counter(issue.kind.value for issue in issues))
+
+
+def _log_outcome(
+    model: str, attempts: tuple[Attempt, ...], outcome: str, *, removed_quotes: int
+) -> None:
+    logger.info(
+        "article %s -> %s",
+        model,
+        outcome,
+        extra={
+            "model": model,
+            "attempts": len(attempts),
+            "issues": [_count_kinds(attempt.issues) for attempt in attempts],
+            "removed_quotes": removed_quotes,
+            "outcome": outcome,
+        },
+    )

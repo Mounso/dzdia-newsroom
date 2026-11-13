@@ -10,7 +10,6 @@ You implement one change in dzdia-newsroom that has already been decided. The br
 ## Scope
 
 - Implement exactly what the brief decides. If it leaves an architecture or design choice open, or if the code contradicts it, stop and report the question with 2-3 options and their trade-offs. Do not choose.
-- Do not write the body of a kata: agent loop core, RRF, structured-output validation and retry, recall@k/MRR, Cohen's kappa, SSRF guard. For these, write signatures, docstrings and tests only, and leave the body to Abdou.
 - When debugging, list the root causes by probability and report them. Do not edit until the brief says which one to fix.
 - Never fill in or change a human label under `evals/datasets/`.
 

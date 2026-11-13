@@ -1,10 +1,7 @@
-"""Specification of Abdou's kata: `find_issues` and `generate_article` (ADR-0009 point 4,
-ADR-0011, ADR-0012, review finding V-9).
+"""Specification tests of `find_issues` and `generate_article` (ADR-0009 point 4, ADR-0011,
+ADR-0012, review finding V-9), plus the outcome log line of `generate_article`."""
 
-The bodies raise NotImplementedError until Abdou writes them, so every test here is an expected
-failure on NotImplementedError only: any other failure (a wrong result) is reported as a real
-failure, and a test that passes shows as XPASS. Remove the marker once both functions exist.
-"""
+import logging
 
 import pytest
 
@@ -22,10 +19,6 @@ from dzdia_newsroom.tools.article import (
     retry_feedback,
 )
 from dzdia_newsroom.tools.evidence import build_evidence
-
-pytestmark = pytest.mark.xfail(
-    raises=NotImplementedError, reason="kata: Abdou writes find_issues and generate_article"
-)
 
 EVIDENCE = build_evidence(
     "Festival du film d’Oran\n"
@@ -322,3 +315,47 @@ async def test_a_structured_output_error_is_not_mistaken_for_an_api_error() -> N
     with pytest.raises(StructuredOutputError):
         await FakeLLM(["oops"]).generate_structured("p", ArticleDraft)
     await generate_article(FakeLLM(["oops", VALID]), EVIDENCE)
+
+
+# --- outcome log line ------------------------------------------------------------------------
+
+LOGGER = "dzdia_newsroom.tools.article"
+
+
+def _outcome_records(caplog: pytest.LogCaptureFixture) -> list[logging.LogRecord]:
+    return [record for record in caplog.records if record.name == LOGGER]
+
+
+async def test_a_success_logs_one_line_with_counts_only(caplog: pytest.LogCaptureFixture) -> None:
+    caplog.set_level(logging.INFO, logger=LOGGER)
+    bad = draft([OPENING, quote(BAD_QUOTE)])
+    await generate_article(FakeLLM([bad, bad], model="m"), EVIDENCE)
+
+    [record] = _outcome_records(caplog)
+    assert record.levelno == logging.INFO
+    assert (record.model, record.attempts, record.outcome) == ("m", 2, "ok")  # type: ignore[attr-defined]
+    kinds = {"quote_not_in_evidence": 1}
+    assert record.issues == [kinds, kinds]  # type: ignore[attr-defined]
+    assert record.removed_quotes == 1  # type: ignore[attr-defined]
+    logged = f"{record.getMessage()} {record.__dict__}"
+    assert BAD_QUOTE not in logged and "Karim" not in logged and "festival" not in logged
+
+
+async def test_a_failure_logs_one_line_and_keeps_text_out_of_the_error(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    caplog.set_level(logging.INFO, logger=LOGGER)
+    bad = draft([sentence("Il a dit « oui ».", "E2"), quote(BAD_QUOTE)])
+    with pytest.raises(GenerationFailedError) as info:
+        await generate_article(FakeLLM([bad, '{"title": "secret"'], model="m"), EVIDENCE)
+
+    [record] = _outcome_records(caplog)
+    assert record.levelno == logging.INFO
+    assert (record.attempts, record.outcome, record.removed_quotes) == (2, "failed", 0)  # type: ignore[attr-defined]
+    assert record.issues == [  # type: ignore[attr-defined]
+        {"quotation_marks": 1, "quote_not_in_evidence": 1},
+        {"unparsable": 1},
+    ]
+    for text in (f"{record.getMessage()} {record.__dict__}", str(info.value)):
+        assert "oui" not in text and "secret" not in text and BAD_QUOTE not in text
+    assert "unparsable" in str(info.value)

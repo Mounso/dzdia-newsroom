@@ -1,4 +1,5 @@
-"""Claude's part of the article tool: schema, prompt, quote check, removal, rendering."""
+"""The article tool outside validation and retry: schema, prompt, quote check, removal,
+rendering."""
 
 import unicodedata
 
