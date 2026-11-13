@@ -28,7 +28,10 @@ _QUOTES_AND_DASHES = str.maketrans(
         "–": "-", "—": "-", " ": " ", " ": " ",
     }
 )  # fmt: skip
-_NUMBER = re.compile(r"\d+(?:[ .]\d{3})*(?:[.,]\d+)?")
+# Thousands separators (space or dot) only after a leading group of 1-3 digits, so "En 2023 450
+# artistes" reads 2023 and 450, not 2023450 (B7). "le 12 450 participants" still reads 12450:
+# that is ambiguous for a human too, and only adds an element to label.
+_NUMBER = re.compile(r"\d{1,3}(?:[ .]\d{3})+(?:[.,]\d+)?|\d+(?:[.,]\d+)?")
 _WORD = re.compile(r"\w+")
 
 

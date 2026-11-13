@@ -12,16 +12,25 @@ Where the project stands and what comes next. The plan follows the product spec 
 
 | Week | Deliverables | Status |
 |---|---|---|
-| 1 | Repository foundation (uv, ruff, mypy strict, pytest, CI). v1 hallucination baseline. Telegram webhook, Postgres job queue and worker. Docker stack. Deployment on the VM. | Code done and tested end to end with a real bot; baseline paused at the extraction step. VM deployment decided (ADR-0007) and scripted in `deploy/`; first run on the VM pending. |
+| 1 | Repository foundation (uv, ruff, mypy strict, pytest, CI). v1 hallucination baseline. Telegram webhook, Postgres job queue and worker. Docker stack. Deployment on the VM. | Code done and tested end to end with a real bot. Baseline done on 2026-11-13: in `url_only`, at least 28 % [21–35 %] of elements are unsupported ([results](evals/baseline-v1.md#results)). VM deployment decided (ADR-0007) and scripted in `deploy/`; first run on the VM pending (stage 3). |
 | 2 | Article flow for web links and pasted text: content extraction with SSRF guard, LLM providers (real and fake), structured outputs with retry, evidence and citations by id, synthesis card, angle choice, article, approval workflow, draft on a local WordPress. Faithfulness eval. | Not started |
 | 3 | Audio and video (transcription, `yt-dlp`). RAG over the dzdia.com archive: sync, chunking, hybrid search (pgvector + Postgres full text), RRF, reranking, recall report. Internal links, "already covered" alert, proper-noun glossary. | Not started |
 | 4 | Morning briefing (scheduled workflow with assignment buttons). `/veille` research agent with a hand-written loop and budgets. Guardrails and a prompt-injection test set. | Not started |
 | 5 | MCP server over the same tools, tracing (Langfuse), real evals in CI with quality gates, calibrated LLM judge, GDPR and AI Act note, metrics in the README. | Not started |
 | Later | Feedback from journalists, then an agent framework version for comparison. | Not started |
 
+## Stages
+
+Since 2026-11-09 the work is ordered in three stages; each one finishes before the next starts.
+
+| Stage | Goal | Status |
+|---|---|---|
+| 1 | Final v1 hallucination baseline: extractor choice ([ADR-0008](adr/0008-baseline-extractor-model.md)), B7 and R8, `extract`, `match`, human labeling, `report`. | Done on 2026-11-13 |
+| 2 | A vertical slice of v2: one link in, one sourced draft out (week 2 scope, starting with its ADRs). | Not started |
+| 3 | Production VM and real use by the team. | Not started |
+
 ## Next steps
 
-1. Discovery session with the journalists: briefing sources, a `dzdia.com` subdomain for the webhook, the team group id, journalists' Telegram ids.
-2. Run the deployment on the Oracle Cloud Ampere VM: console setup, `deploy/bootstrap.sh`, first `deploy/deploy.sh`, production webhook, first backup and restore drill ([deployment](operations/deployment.md#first-installation)).
-3. Resume the baseline: choose the extractor model, then `extract` (all 144 runs), `match`, labeling and `report`.
-4. Week 2 ADRs: LLM package, effects ledger, workflow state, worker concurrency, log correlation.
+1. LLM-judge pass on the 252 labeled elements, calibrated against the human labels (Cohen's kappa); its verdicts are stored apart and never replace a label.
+2. Stage 2, week 2 ADRs: LLM package, effects ledger, workflow state, worker concurrency, log correlation.
+3. Stage 3: discovery session with the journalists (briefing sources, a `dzdia.com` subdomain for the webhook, the team group id, journalists' Telegram ids), then the deployment on the Oracle Cloud Ampere VM: console setup, `deploy/bootstrap.sh`, first `deploy/deploy.sh`, production webhook, first backup and restore drill ([deployment](operations/deployment.md#first-installation)).

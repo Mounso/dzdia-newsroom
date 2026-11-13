@@ -4,6 +4,7 @@ from datetime import UTC, datetime
 from pydantic import BaseModel
 
 from evals.baseline_v1.extract import build_extraction_prompt, element_id, extract_run
+from evals.baseline_v1.llm import Structured
 from evals.baseline_v1.schemas import RunRecord
 from tests.evals.fakes import FakeStructuredGenerator
 
@@ -43,14 +44,19 @@ async def _ids(*elements: tuple[str, str]) -> list[str]:
 
 
 async def test_extract_run_drops_media_name_and_assigns_ids() -> None:
-    generator = FakeStructuredGenerator(PAYLOAD)
+    generator = FakeStructuredGenerator(PAYLOAD, thinking_level="low")
     before = datetime.now(UTC)
     record, elements = await extract_run(generator, _run("Le président Tebboune..."))
 
     assert record.error is None and record.n_elements == 2
-    assert (record.model, record.prompt_version) == ("fake-extractor", "extract-v1")
+    assert (record.model, record.thinking_level, record.prompt_version) == (
+        "fake-extractor",
+        "low",
+        "extract-v1",
+    )
+    assert (record.input_tokens, record.output_tokens, record.thinking_tokens) == (10, 5, 3)
     assert before <= record.created_at <= datetime.now(UTC)
-    assert record.latency_ms is not None
+    assert record.latency_ms == 7
     assert [e.value for e in elements] == ["Abdelmadjid Tebboune", "1,5 million"]
     assert [e.element_id for e in elements] == [
         element_id(RUN_ID, "person", "Abdelmadjid Tebboune"),
@@ -90,7 +96,9 @@ async def test_repeated_value_is_numbered_by_occurrence() -> None:
 
 async def test_failed_extraction_is_dated() -> None:
     class Failing(FakeStructuredGenerator):
-        async def generate_structured[M: BaseModel](self, prompt: str, schema: type[M]) -> M:
+        async def generate_structured[M: BaseModel](
+            self, prompt: str, schema: type[M]
+        ) -> Structured[M]:
             raise TimeoutError("slow")
 
     record, elements = await extract_run(Failing(PAYLOAD), _run("texte"))

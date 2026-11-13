@@ -26,8 +26,13 @@ class Settings(BaseSettings):
     gemini_api_key: SecretStr
     # Model used by the legacy v1 bot; kept configurable in case the preview model is retired.
     v1_model: str = "gemini-3.1-flash-lite-preview"
-    extraction_model: str = "gemini-2.5-flash"
+    # Extractor of the v1 baseline (ADR-0008). The thinking level applies to it only; None means
+    # the model's default.
+    extraction_model: str = "gemini-3.1-pro-preview"
+    extraction_thinking_level: Literal["minimal", "low", "medium", "high"] | None = "low"
     llm_max_concurrency: int = 2
+    # Requests per minute per client, below the tier-1 limit of the extractor (25, ADR-0008).
+    llm_max_rpm: int = 20
 
 
 class DatabaseSettings(BaseSettings):

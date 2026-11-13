@@ -133,6 +133,41 @@ def test_build_report_renders_tables() -> None:
     assert "Provisional report" not in report
 
 
+def test_build_report_adds_a_row_per_condition_over_original_items() -> None:
+    items = [
+        SampleItem(item_id="a", source="tsa", url="u", title="t", snapshot_id="a"),
+        SampleItem(item_id="a-opaque", source="tsa", url="u?p=1", title="t", snapshot_id="a",
+                   is_opaque=True),
+    ]  # fmt: skip
+    article = _run("r2", "a").model_copy(update={"task": "article"})
+    runs = [_run("r1", "a"), article, _run("r3", "a-opaque")]
+    extractions = [
+        ExtractionRecord(
+            run_id=r, model="x", prompt_version="extract-v1", created_at=datetime.now(UTC)
+        )
+        for r in ("r1", "r2", "r3")
+    ]
+    elements = [
+        _element("e1", "r1", "a", "not_found"),
+        _element("e2", "r2", "a", "found"),
+        _element("e3", "r2", "a", "found"),
+        _element("e4", "r3", "a-opaque", "not_found"),  # opaque: excluded from the row
+    ]
+    labels = {
+        "e1": HumanLabel(element_id="e1", label="NOT_IN_SOURCE"),
+        "e2": HumanLabel(element_id="e2", label="CONTRADICTED"),
+        "e4": HumanLabel(element_id="e4", label="NOT_IN_SOURCE"),
+    }
+
+    report = build_report(items, runs, extractions, elements, labels)
+    # Both tasks of the original item: 2 outputs, 3 elements, 2 unsupported, both outputs hit.
+    assert "| url_only / all tasks | 2 | 0 | 3 | 0 | 0 | 67% [67%–67%] (2/3) " in report
+    assert "| 100% [100%–100%] (2/2) |" in report
+    # Audited 'found' of the original item: e2 only, CONTRADICTED.
+    assert "- url_only: 0% [0%–0%] (0/1)" in report
+    assert "- page_text: n/a" in report
+
+
 def test_build_report_flags_pending_elements_and_shows_bounds() -> None:
     items = [SampleItem(item_id="a", source="tsa", url="u", title="t", snapshot_id="a")]
     runs = [_run("r1", "a"), _run("r2", "a")]
@@ -148,5 +183,6 @@ def test_build_report_flags_pending_elements_and_shows_bounds() -> None:
     assert "**Provisional report:** 1 elements are still pending" in report
     # One cluster: the bootstrap CI collapses onto each bound.
     assert "| url_only / summary | 2 | 0 | 2 | 1 | 1 | 0%–50% [0%–50%] (0–1/2)" in report
-    assert report.rstrip().count("| 0%–50% [0%–50%] (0–1/2) |") == 2
+    # Element and output bounds, on the summary row and on the identical "all tasks" row.
+    assert report.rstrip().count("| 0%–50% [0%–50%] (0–1/2) |") == 4
     assert "| url_only | number | 1 | 0% [0%–0%] (0/1) |" in report

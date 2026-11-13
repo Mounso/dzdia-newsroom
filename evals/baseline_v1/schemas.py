@@ -65,11 +65,17 @@ class ExtractedElements(BaseModel):
 class ExtractionRecord(BaseModel):
     run_id: str
     model: str
+    thinking_level: str | None = None  # None: the model's default (ADR-0008)
     prompt_version: str
     created_at: datetime
     n_elements: int = 0
     error: str | None = None
+    # The successful model call. The gemini-3.1-pro-preview pass of 2026-11-09 also counted the
+    # wait for a concurrency slot, so its latencies are overstated.
     latency_ms: int | None = None
+    input_tokens: int | None = None
+    output_tokens: int | None = None
+    thinking_tokens: int | None = None  # billed as output tokens
 
 
 class ElementRecord(BaseModel):

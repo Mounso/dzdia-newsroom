@@ -1,6 +1,12 @@
 import pytest
 
-from evals.baseline_v1.matcher import SourceIndex, canonical_number, match_element, normalize
+from evals.baseline_v1.matcher import (
+    SourceIndex,
+    canonical_number,
+    match_element,
+    normalize,
+    numbers_in,
+)
 
 SOURCE = (
     "Le président Abdelmadjid Tebboune a reçu jeudi 12 octobre 2026 à Alger les responsables de "
@@ -30,6 +36,28 @@ def test_normalize_strips_accents_and_unifies_typography() -> None:
 )
 def test_canonical_number(raw: str, expected: str) -> None:
     assert canonical_number(raw) == expected
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        ("En 2023 450 artistes", {"2023", "450"}),  # B7: was {"2023450"}
+        ("En 2023 1 500 artistes", {"2023", "1500"}),
+        ("un budget de 1 500 000 dinars", {"1500000"}),
+        ("un budget de 1.500.000 dinars", {"1500000"}),
+        ("une hausse de 12,5 %", {"12.5"}),
+        ("1 500,75 dinars", {"1500.75"}),
+        ("le 12 450 participants", {"12450"}),  # ambiguous: kept as one number (documented)
+    ],
+)
+def test_numbers_in(text: str, expected: set[str]) -> None:
+    assert numbers_in(text) == expected
+
+
+def test_number_after_a_year_is_found() -> None:
+    index = SourceIndex("En 2023 450 artistes ont participé au festival.")
+    assert match_element("number", "450 participants", index).found
+    assert match_element("date", "2023", index).found
 
 
 @pytest.mark.parametrize(

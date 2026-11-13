@@ -26,7 +26,9 @@ Status: **Fixed** (with the change that fixed it), **Open**, or **Planned** (sch
 | B4 | Low | The worker ignored the result of `retry_later` and `mark_dead`, and logged "retry in N s" or "dead" even when its lease was lost and the row unchanged. | Fixed |
 | B5 | Medium (latent) | Eval element ids depend on position in the extractor output. | Fixed |
 | B6 | Low | The output-level rate in the eval report is biased low while elements are pending. | Fixed |
-| B7 | Low | The number regex of the matcher merges two adjacent numbers. | Open |
+| B7 | Low | The number regex of the matcher merges two adjacent numbers. | Fixed |
+| B8 | Low | Found on 2026-11-13: in 8 elements of one tsa-04 run, the `context` copied by the extractor has broken accent escapes ("alg000e9rienne a condamn000e9"); the v1 output itself is correct. The values were usable and the labeler judged against the article, so the rates are not affected. Check the structured output decoding before the next extraction. | Open |
+| B9 | Low | Found on 2026-11-13: the report header cites "protocol: ADR-001", the numbering before the ADRs were split; it should be ADR-0001. | Open |
 
 ### B1 — A long Telegram 429 loses the message
 
@@ -64,6 +66,8 @@ Status: **Fixed** (with the change that fixed it), **Open**, or **Planned** (sch
 - **Where:** [`evals/baseline_v1/matcher.py`](../../evals/baseline_v1/matcher.py), `_NUMBER`.
 - **What happens:** "En 2023 450 artistes" yields the single number `2023450` (verified). The token fallback often recovers the element, but "450 participants" would be `not_found`.
 - **Impact:** extra human labeling only; every `not_found` element is labeled, so the final rates are not biased.
+- **Fix (option A of three, chosen by Abdou on 2026-11-09):** thousands separators (space or dot) are accepted only after a leading group of 1 to 3 digits: `\d{1,3}(?:[ .]\d{3})+(?:[.,]\d+)?|\d+(?:[.,]\d+)?`. A group of 4 or more digits can never start a "1 500 000", so "En 2023 450 artistes" now reads 2023 and 450; nothing is matched more loosely than before. Remaining limit, documented in the tests: "le 12 450 participants" still reads 12450, which is ambiguous for a human too and only adds an element to label.
+- **Options set aside:** (B) index the merged number and each of its parts on the source side: fewer elements to label, but looser matching, and a false `found` is labeled only if it falls in the 20 % audit sample, so it could hide a hallucination. (C) accept only no-break spaces and dots as thousands separators: page text often uses plain spaces, so "1 500 000" would become `not_found`.
 
 ## 2. Robustness and optimizations
 
@@ -76,7 +80,7 @@ Status: **Fixed** (with the change that fixed it), **Open**, or **Planned** (sch
 | R5 | Silent dead jobs | When a job dies, the user receives nothing and nobody is alerted. | Fallback message to the user, plus an alert (monitored ERROR log or message to an admin chat). | Medium | Planned (week 2) |
 | R6 | Worker concurrency | One job at a time. LLM calls last up to 88 s, so one long article would block every other message. | N concurrent slots bounded by a semaphore; `SKIP LOCKED` already supports it. | Medium | Planned (week 2) |
 | R7 | Replay after downtime | Telegram keeps updates for 24 h; the bot will answer messages hours old. | Ignore or flag messages whose `sent_at` exceeds a threshold. | Low | Open |
-| R8 | LLM client | `retryDelay` ignored, no rate limiter, latency and cost not logged; structured output discards `usage_metadata`. | Handle with A3. | Medium | Planned (week 2) |
+| R8 | LLM client | `retryDelay` ignored, no rate limiter, latency and cost not logged; structured output discards `usage_metadata`. | Fixed in the eval client on 2026-11-09 (option A of three, chosen by Abdou): retries wait `max(backoff, retryDelay × (1 + 10 % jitter))`, and a `retryDelay` above 120 s (a daily quota) fails the call, which a re-run retries; `RequestSpacer` spaces request starts by `60 / LLM_MAX_RPM` s (default 20, below the extractor's 25); structured calls return input, output and thinking tokens, stored in `ExtractionRecord`, and `extract` prints the totals (no price table in code: it would go stale). Set aside: (B) a token bucket on tokens per minute too, unneeded for 144 calls; (C) `tenacity` and `aiolimiter`, two dependencies that still need custom code to read `retryDelay`. The v2 LLM client (A3) reuses this. | Medium | Fixed |
 | R9 | Health checks | `/health` does not check the database; the worker has no health check, so a stuck worker goes unnoticed. | `/health/ready` with `SELECT 1`; a worker heartbeat file checked by compose. | Low | Open |
 | R10 | Telegram limits | `sendMessage` rejects more than 4096 characters (400, treated as permanent). | Split long texts (articles). | Low | Planned (week 2) |
 | R11 | Worker log fields | The worker puts `job_id`, `kind` and attempt in the message text, not in `extra` fields, so they cannot be filtered as fields. | Pass them in `extra`; see A5 for request correlation. | Low | Open |
@@ -139,4 +143,5 @@ Strengths worth keeping: constant-time secret comparison; fail-closed allowlist;
 3. ~~**Evals:** B5 and the extraction timestamp, then B6, before running `extract` again.~~ Done on 2026-10-28 (option A for B5, option B for B6).
 4. ~~**CI and supply chain:** S1, S2 and coverage measurement.~~ Done on 2026-10-28 (option B for both).
 5. **Deployment** (not a finding, the next module): decided in [ADR-0007](../adr/0007-production-host-on-oracle-cloud.md) on 2026-10-28 and scripted in `deploy/`. S2-C (Trivy) is to be reconsidered once the VM runs.
-6. **Week 2 (ADRs):** A1 to A5, R4, R5, R6, R8, R10.
+6. **Week 2 (ADRs):** A1 to A5, R4, R5, R6, R10.
+7. ~~**Baseline v1 critical path:** B7 and R8, before running `extract` and `match` again.~~ Done on 2026-11-09 (option A for both); the extractor is set by [ADR-0008](../adr/0008-baseline-extractor-model.md). The final report followed on 2026-11-13 ([results](../evals/baseline-v1.md#results)); B8 and B9, found on the way, were left open as agreed (palier 1 does only the critical path).

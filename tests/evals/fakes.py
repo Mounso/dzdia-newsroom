@@ -4,7 +4,7 @@ from collections.abc import Callable
 
 from pydantic import BaseModel
 
-from evals.baseline_v1.llm import Generation
+from evals.baseline_v1.llm import Generation, Structured, Usage
 
 
 class FakeTextGenerator:
@@ -21,11 +21,16 @@ class FakeTextGenerator:
 
 
 class FakeStructuredGenerator:
-    def __init__(self, payload: str, model: str = "fake-extractor") -> None:
+    def __init__(
+        self, payload: str, model: str = "fake-extractor", thinking_level: str | None = None
+    ) -> None:
         self.model = model
+        self.thinking_level = thinking_level
         self.calls = 0
         self._payload = payload
 
-    async def generate_structured[M: BaseModel](self, prompt: str, schema: type[M]) -> M:
+    async def generate_structured[M: BaseModel](
+        self, prompt: str, schema: type[M]
+    ) -> Structured[M]:
         self.calls += 1
-        return schema.model_validate_json(self._payload)
+        return Structured(schema.model_validate_json(self._payload), Usage(10, 5, 3), latency_ms=7)

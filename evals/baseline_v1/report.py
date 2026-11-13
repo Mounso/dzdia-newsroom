@@ -202,11 +202,13 @@ def build_report(
 
     groups: list[GroupStats] = []
     for condition in ("url_only", "page_text"):
-        for task in ("summary", "article"):
+        # One row per task, then both tasks together: the headline figure of each condition.
+        for task, tasks in (("summary", {"summary"}), ("article", {"article"}),
+                            ("all tasks", {"summary", "article"})):  # fmt: skip
             g_runs = [
                 r
                 for r in ok_runs
-                if r.condition == condition and r.task == task and r.item_id not in opaque_ids
+                if r.condition == condition and r.task in tasks and r.item_id not in opaque_ids
             ]
             run_ids = {r.run_id for r in g_runs}
             g_elements = [e for e in elements if e.run_id in run_ids]
@@ -280,5 +282,12 @@ def build_report(
         f"Precision of automatic 'found' (human-confirmed SUPPORTED): "
         f"{_fmt(matcher_precision(elements, labels))}",
         "",
+        "Unaudited 'found' elements count as supported, so every unsupported rate above is a "
+        "lower bound when this precision is below 100 %. By condition (original items only):",
+        "",
     ]
+    for condition in ("url_only", "page_text"):
+        subset = [e for e in elements if e.condition == condition and e.item_id not in opaque_ids]
+        lines.append(f"- {condition}: {_fmt(matcher_precision(subset, labels))}")
+    lines.append("")
     return "\n".join(lines)

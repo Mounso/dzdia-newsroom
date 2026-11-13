@@ -1,7 +1,6 @@
 """Extract the critical elements (names, numbers, dates, quotes) stated in each v1 output."""
 
 import hashlib
-import time
 import unicodedata
 from collections import Counter
 from datetime import UTC, datetime
@@ -74,24 +73,23 @@ async def extract_run(
     record = ExtractionRecord(
         run_id=run.run_id,
         model=generator.model,
+        thinking_level=generator.thinking_level,
         prompt_version=EXTRACTION_PROMPT_VERSION,
         created_at=datetime.now(UTC),
     )
     text = run.output_text or ""
     if not text.strip() or INSUFFICIENT_TEXT_MARKER in text:
         return record, []
-    started = time.perf_counter()
     try:
-        extracted = await generator.generate_structured(
+        result = await generator.generate_structured(
             build_extraction_prompt(text), ExtractedElements
         )
     except Exception as exc:
         return record.model_copy(update={"error": repr(exc)}), []
-    latency_ms = int((time.perf_counter() - started) * 1000)
 
     seen: Counter[tuple[ElementType, str]] = Counter()
     elements: list[ElementRecord] = []
-    for e in extracted.elements:
+    for e in result.value.elements:
         if not _is_kept(e.value):
             continue
         value = e.value.strip()
@@ -109,5 +107,13 @@ async def extract_run(
                 context=e.context.strip()[:200],
             )
         )
-    record = record.model_copy(update={"n_elements": len(elements), "latency_ms": latency_ms})
+    record = record.model_copy(
+        update={
+            "n_elements": len(elements),
+            "latency_ms": result.latency_ms,
+            "input_tokens": result.usage.input_tokens,
+            "output_tokens": result.usage.output_tokens,
+            "thinking_tokens": result.usage.thinking_tokens,
+        }
+    )
     return record, elements

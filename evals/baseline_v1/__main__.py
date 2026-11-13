@@ -46,7 +46,7 @@ def _http_client() -> httpx.AsyncClient:
     return httpx.AsyncClient(timeout=HTTP_TIMEOUT, follow_redirects=True, max_redirects=5)
 
 
-def _gemini(model_attr: str) -> GeminiClient:
+def _gemini(model_attr: str, thinking_level: str | None = None) -> GeminiClient:
     from dzdia_newsroom.config import get_settings
 
     settings = get_settings()
@@ -54,6 +54,8 @@ def _gemini(model_attr: str) -> GeminiClient:
         settings.gemini_api_key.get_secret_value(),
         model=getattr(settings, model_attr),
         max_concurrency=settings.llm_max_concurrency,
+        max_rpm=settings.llm_max_rpm,
+        thinking_level=thinking_level,
     )
 
 
@@ -153,18 +155,26 @@ async def cmd_extract(paths: Paths) -> None:
         for r in runs.values()
         if r.error is None and (r.run_id not in previous or previous[r.run_id].error is not None)
     ]
-    generator = _gemini("extraction_model")
-    print(f"Extracting {len(todo)} runs with {generator.model}")
+    from dzdia_newsroom.config import get_settings
+
+    generator = _gemini("extraction_model", get_settings().extraction_thinking_level)
+    print(f"Extracting {len(todo)} runs with {generator.model} ({generator.thinking_level})")
     elements = {e.element_id: e for e in read_jsonl(paths.elements, ElementRecord)}
+    tokens = {"input": 0, "output": 0, "thinking": 0}
     for next_done in asyncio.as_completed([extract_run(generator, r) for r in todo]):
         record, new_elements = await next_done
         append_jsonl(paths.extractions, [record])
+        tokens["input"] += record.input_tokens or 0
+        tokens["output"] += record.output_tokens or 0
+        tokens["thinking"] += record.thinking_tokens or 0
         elements = {k: v for k, v in elements.items() if v.run_id != record.run_id}
         elements.update({e.element_id: e for e in new_elements})
         write_jsonl(paths.elements, elements.values())
         if record.error:
             print(f"  FAILED {record.run_id}: {record.error}")
     print(f"{len(elements)} elements in {paths.elements}")
+    # No price table in code: it would go stale silently. Thinking tokens are billed as output.
+    print("Tokens this pass: " + ", ".join(f"{k} {v:,}" for k, v in tokens.items()))
 
 
 def cmd_match(paths: Paths, name_threshold: float) -> None:

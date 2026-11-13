@@ -33,7 +33,9 @@ This page lists every environment variable the system reads, which process reads
 | `OCI_REGION` | compose (`rclone`) | Yes for uploads | — | Region identifier, e.g. `eu-marseille-1`. |
 | `GEMINI_API_KEY` | eval harness (`Settings`) | Yes for `evals.baseline_v1` LLM steps | — | Google Gemini API key. Not passed to any compose service. |
 | `V1_MODEL` | eval harness (`Settings`) | No | `gemini-3.1-flash-lite-preview` | Model used to replay the legacy v1 prompts. |
-| `EXTRACTION_MODEL` | eval harness (`Settings`) | No | `gemini-2.5-flash` | Model used to extract critical elements. |
+| `EXTRACTION_MODEL` | eval harness (`Settings`) | No | `gemini-3.1-pro-preview` | Model used to extract critical elements ([ADR-0008](../adr/0008-baseline-extractor-model.md)). |
+| `LLM_MAX_RPM` | eval harness (`Settings`) | No | `20` | Requests per minute per Gemini client: request starts are spaced by `60 / LLM_MAX_RPM` seconds, retries included (R8). |
+| `EXTRACTION_THINKING_LEVEL` | eval harness (`Settings`) | No | `low` | Thinking level of the extractor: `minimal`, `low`, `medium` or `high` (the levels a model accepts vary). Applies to the extractor only, never to the v1 model under test. |
 | `LLM_MAX_CONCURRENCY` | eval harness (`Settings`) | No | `2` | Maximum concurrent LLM calls in the eval harness. |
 
 `migrate` reads `LOG_FORMAT` and `LOG_LEVEL` from its environment, but compose does not pass them to it today, so it uses the defaults.

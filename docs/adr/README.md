@@ -36,5 +36,6 @@ An ADR that only changes part of an earlier one *amends* it: both stay accepted,
 | 0005 | [Telegram ingress: normalized message, allowlist, webhook registration and JSON logs](0005-telegram-ingress.md) | Accepted | 2026-10-27 | Builds on 0004 |
 | 0006 | [Docker image, compose layout, migrations and secret distribution](0006-docker-image-and-compose.md) | Accepted | 2026-10-27 | Builds on 0004, 0005; extended by 0007 |
 | 0007 | [Production host on Oracle Cloud: access, firewall, deployment, backups and hostname](0007-production-host-on-oracle-cloud.md) | Accepted | 2026-10-28 | Builds on 0004, 0006 |
+| 0008 | [Gemini 3.1 Pro (preview, low thinking) extracts the elements of the v1 baseline](0008-baseline-extractor-model.md) | Accepted | 2026-11-09 | Related to 0001 |
 
 > ADRs 0001-0006 were written in French and translated to English on 2026-10-28 with no change in substance; the French originals are in the git history (`docs/architecture_decisions.md`, commit 8e32200).

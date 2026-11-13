@@ -1,7 +1,15 @@
-# Statut — 2026-10-28 (ADR-0007 accepté, scripts `deploy/` écrits, testés en local, commités et poussés ; premier passage sur la VM à faire)
+# Statut — 2026-11-13 (palier 1 terminé : baseline v1 finale, commitée et poussée)
 
 ## Pour reprendre dans une nouvelle session
-- **Première chose à faire : le premier passage sur la vraie VM**, avec Abdou. Tout est décrit dans `docs/operations/deployment.md` (section « First installation ») ; décisions dans `docs/adr/0007-production-host-on-oracle-cloud.md`. Ce sont **ses comptes et sa machine** : lui donner les étapes et les commandes, il les lance et colle les sorties.
+- **Plan en trois paliers** (validé par Abdou le 2026-11-09) :
+  - **palier 1 (terminé le 2026-11-13)** : le chiffre final du taux d'hallucination de la v1, pour le CV d'Abdou. L'échéance (mercredi 2026-11-11 au soir) a été dépassée de deux jours ;
+  - **palier 2** : une tranche verticale de la v2. **Pas commencé ; attendre le feu vert d'Abdou.** Le garde SSRF et le validateur de retry de la sortie structurée sont des katas d'Abdou ;
+  - **palier 3** : la VM Oracle et l'usage réel (checklist ci-dessous, pas commencée).
+- **Le chiffre** (`evals/datasets/baseline_v1/report.md`, ligne « url_only / all tasks », 16 articles d'origine, IC à 95 % par bootstrap sur les articles) : en `url_only` (la v1 livrée), **au moins 28 % [21–35 %]** des éléments ne sont pas soutenus par l'article (72/258), et 41 % [30–53 %] des sorties en ont au moins un (26/64). En `page_text` : 5 % [3–7 %] et 28 % [19–38 %]. **C'est un plancher** : les `found` hors audit comptent comme soutenus, et la précision de l'audit est de 86 % en `url_only` (30/35). Abdou a choisi de l'annoncer comme un plancher (option A) plutôt que d'étiqueter les 150 `found` restants (B) ou d'ajouter un estimateur corrigé (C). Détails et limites dans `docs/evals/baseline-v1.md`, sections « Results » et « Known limitations ».
+- **Puces de CV proposées** (rien au-delà du rapport) : FR « Mesuré le taux d'hallucination de la v1, qui n'ouvrait pas les liens : sur 16 articles d'actualité algérienne (64 sorties), au moins 28 % des éléments factuels [IC 95 % : 21–35 %] n'étaient pas soutenus par la source, contre 5 % avec le texte de la page ; 252 éléments étiquetés à la main, IC par bootstrap sur les articles. » Faits corrigés pour son paragraphe : **16 articles** (20 URL dont 4 doublons opaques), « plus léger » et non « moins cher » pour `gemini-3.5-flash-lite`.
+- **Étiquetage :** 252 éléments étiquetés par Abdou (le 2026-11-12), puis 20 lignes signalées par des contrôles mécaniques sans LLM (scripts dans un scratchpad, non gardés) et relues par lui (13 changées, le 2026-11-13). Règle ajoutée au guide : une citation reformulée est `C`. Une citation reformulée de tsa-02 (« Ceux qui nourrissent ce monstre… ») est restée `S` ; sans effet sur `url_only`. **Ne jamais pré-remplir ni corriger d'étiquettes avec un LLM** : ce sont la référence pour calibrer le juge.
+- **Prochaine étape probable : la passe du LLM-juge** sur les 252 éléments, calibrée contre ces étiquettes (kappa de Cohen, un kata d'Abdou : ne pas l'écrire à sa place). Questions d'architecture et ADR d'abord.
+- **Palier 3, pas commencé : le premier passage sur la vraie VM**, avec Abdou. Tout est décrit dans `docs/operations/deployment.md` (section « First installation ») ; décisions dans `docs/adr/0007-production-host-on-oracle-cloud.md`. Ce sont **ses comptes et sa machine** : lui donner les étapes et les commandes, il les lance et colle les sorties.
   1. **Console Oracle (Abdou) :** passer le compte en Pay As You Go avec une alerte de budget (sinon Oracle arrête l'instance « inactive ») ; créer la VM `VM.Standard.A1.Flex`, Ubuntu 24.04 aarch64, avec une **clé ed25519** (une clé RSA est refusée par `bootstrap.sh`) ; réserver l'IP publique ; security list 22/80/443 ; bucket `dzdia-backups` (rétention 7 jours, cycle de vie `daily/` et `predeploy/` 8 jours, `weekly/` 29 jours, et la politique `objectstorage-<région>`) ; groupe dynamique `dzdia-vm` et politique d'ajout seul (texte exact dans `deployment.md`) ; nom DuckDNS ; check healthchecks.io (optionnel) ; bot de prod chez BotFather.
   2. **Poste d'Abdou :** `age-keygen -o dzdia-backup.key` (clé privée dans son gestionnaire de mots de passe et sur papier, jamais sur la VM).
   3. **VM :** `sudo deploy/bootstrap.sh --dry-run`, puis sans `--dry-run` ; garder la session SSH ouverte et tester `ssh deploy@…` à côté ; `sudo passwd ubuntu` (mot de passe pour la console série seulement).
@@ -12,7 +20,7 @@
 
   Ensuite : mettre à jour la doc avec ce qui a changé sur la VM, ajouter une ligne « validé sur la VM » à l'ADR-0007 si besoin (les métadonnées seulement), et cocher dans la fiche.
 - **À surveiller lundi :** les premières PR de Dependabot. Vérifier comment il regroupe les mises à jour de digest seules. Une PR qui touche l'image Postgres ou uv sera rouge tant que `ci.yml` n'est pas aligné à la main : c'est le test de garde qui fait son travail (`docs/development/conventions.md`, section « Dependencies and supply chain »).
-- **Reste ouvert dans l'audit** (petits points, à traiter quand ils deviennent utiles) : B7 (deux nombres collés lus comme un seul, avant `match`), R3, R7, R9, R11, S5, S6. Prévus plus tard : R4, R5, R6, R8, R10, S3, et A1 à A5 (semaine 2).
+- **Reste ouvert dans l'audit** (petits points, à traiter quand ils deviennent utiles) : R3, R7, R9, R11, S5, S6. Prévus plus tard : R4, R5, R6, R10, S3, et A1 à A5 (semaine 2). B7 et R8 sont corrigés (palier 1). Ouverts depuis le 2026-11-13 : B8 (accents cassés dans 8 contextes copiés par l'extracteur) et B9 (le rapport cite « ADR-001 » au lieu de ADR-0001).
 - **Méthode de travail validée par Abdou** (à suivre à chaque étape) :
   1. options présentées en tableau (principe, pour, contre), une recommandation, et les petits choix à part ; Abdou répond en général « A + mes choix » ;
   2. code et tests, puis ruff, `ruff format`, mypy strict et pytest sous Windows, puis la suite Postgres dans Docker (procédure dans `CLAUDE.md`, en arrière-plan) ;
@@ -42,7 +50,8 @@
   - `c578779` : S1, S2 et la couverture ;
   - `d2e1090` : une passation ;
   - `01887cc` : une passation, qui note l'accès de Claude à la CI ;
-  - le dernier commit : l'ADR-0007 et les scripts `deploy/` (avec la doc, ce fichier compris).
+  - `91dc0b8` : l'ADR-0007 et les scripts `deploy/` ;
+  - le dernier commit : le palier 1 (ADR-0008, B7, R8, ligne globale par condition dans le rapport, `labels.jsonl`, `report.md` et la doc, ce fichier compris).
 
   L'arbre de travail est propre ; tout est commité et poussé.
 
@@ -139,32 +148,31 @@
     - **tests** : `tests/test_deploy_guards.py` (5 tests : seul `caddy` publie hors de `127.0.0.1`, les services applicatifs utilisent `dzdia-newsroom:local`, scripts stricts, en LF et finissant par `main "$@"`), plus l'image `rclone` dans le test de garde de la chaîne d'approvisionnement ; `shellcheck -x deploy/*.sh` dans le job `checks` de la CI ; essais dans des conteneurs Linux (sauvegarde, restauration, mauvaise clé, refus de `deploy.sh`, cibles de rollback, pare-feu Oracle et sa deuxième passe sans effet) ;
     - **doc** : `deployment.md` (installation, déploiement, rollback, sauvegardes, passage à `bot.dzdia.com`), `runbook.md` (sauvegardes, exercice mensuel, restauration, VM à reconstruire, déploiement raté, SSH perdu, pare-feu, mises à jour), `configuration.md` (6 variables), `security.md`, `conventions.md` (expand/contract, scripts shell), `testing.md`, roadmap, revue de conception, `README.md`, `CLAUDE.md`, liens des ADR 0004 et 0006.
 
-## En pause : étape `extract`
-- **État :** 0/144. Les 20 extractions faites avec `gemini-2.5-flash` (les 124 autres avaient pris des 429 : le free tier est limité à 5 requêtes par minute et 20 par jour) n'avaient pas de date. Elles ont été déplacées dans `evals/.data/baseline_v1/pre_b5/` (local, rien de supprimé), et `extract` repartira de zéro. `match` n'est pas lancé.
-- **Modèle écarté :** `gemini-3.5-flash-lite`, testé sur les 20 mêmes runs (sorties dans `evals/.data/baseline_v1/compare_gemini-3.5-flash-lite/`). Il retrouve 76 % des éléments distincts, mais seulement 2 citations sur 7 et 8 organisations sur 16 : il sous-estimerait les hallucinations. Le modèle évalué (3.1 Flash Lite) est écarté aussi, à cause du biais d'auto-évaluation.
-- **Pistes, à trancher par Abdou :**
-  - un extracteur **Claude**, si ses crédits API sont disponibles vers le **2026-11-03** (à vérifier : l'abonnement Max ne donne a priori pas de crédits API) ;
-  - **Groq** (gpt-oss-120b, free tier), déjà prévu comme second fournisseur dans le cahier ;
-  - activer la facturation Gemini, pour quelques centimes ;
-  - relancer `extract` une fois par jour sur le free tier, soit environ 7 jours.
-
-  Si on change de modèle : questions d'architecture, nouvel ADR, puis on refait les **144** extractions avec un seul modèle. Le script de comparaison est à réécrire, car il était dans un scratchpad.
-- **À corriger avant de relancer :**
-  - **R8 :** le retry de `GeminiClient` ignore `retryDelay`, et rien ne limite le débit.
+## Fait : palier 1 (baseline v1)
+- **Extracteur (ADR-0008, accepté) :** `gemini-3.1-pro-preview`, thinking `low`, température 0, une passe, facturation Gemini activée par Abdou (crédit de 5 €). Nouveaux réglages `EXTRACTION_MODEL`, `EXTRACTION_THINKING_LEVEL` (défaut `low`) et `LLM_MAX_RPM` (défaut 20), appliqués aux appels structurés seulement, jamais au modèle v1 évalué. **Abdou doit les ajouter lui-même à `.env.example`** (illisible pour Claude). `gemini-3.5-flash-lite` reste écarté (2 citations sur 7, 8 organisations sur 16 ; sorties dans `evals/.data/baseline_v1/compare_gemini-3.5-flash-lite/`).
+- **B7 (option A) :** `_NUMBER` de `matcher.py` n'accepte un séparateur de milliers qu'après un premier groupe de 1 à 3 chiffres : « En 2023 450 » donne 2023 et 450 ; « 12 450 » reste un seul nombre (limite documentée).
+- **R8 (option A) :** `retry_async` attend `max(backoff, retryDelay × (1 + 10 % de gigue))` et abandonne si `retryDelay` dépasse 120 s ; `gemini_retry_delay` lit `google.rpc.RetryInfo` ; `RequestSpacer` espace les débuts de requête de `60 / LLM_MAX_RPM` s ; `generate_structured` renvoie `Structured(value, usage, latency_ms)` ; `ExtractionRecord` stocke `thinking_level` et les jetons.
+- **Résultats :**
+  - `extract` : 144/144 sans échec, 733 éléments, 5 sorties sans élément ; 69 681 jetons en entrée, 45 264 en sortie, 96 597 de réflexion, environ 1,85 $. La latence enregistrée le 2026-11-09 inclut l'attente d'un créneau de concurrence (médiane 332 s) ; corrigé depuis (appel au modèle seul), noté dans `schemas.py` et `baseline-v1.md` ;
+  - `match` : 600 `found`, 133 `not_found` ; `url_only` 195 / 93 (32 % non trouvés), `page_text` 405 / 40 (9 %) ;
+  - `export-labels` : 252 lignes. Par type (`not_found` / audit `found`) : lieu 67 / 51, citation 22 / 2, organisation 20 / 15, personne 11 / 26, date 8 / 17, nombre 5 / 8. Estimation : 1 h 30 à 2 h avec Ctrl+F.
+- **Pourquoi pas un LLM-juge maintenant :** un juge doit d'abord être calibré sur des étiquettes humaines (kappa, un kata d'Abdou). Ces 252 étiquettes sont le jeu de référence ; le juge vient ensuite.
+- **Rapport :** une ligne « all tasks » par condition (16 articles d'origine) et la précision de l'audit par condition, avec un test (2026-11-13).
+- **Vérifications (2026-11-13) :** ruff, `ruff format --check` et mypy strict ne signalent rien ; 174 tests passent et 13 sont sautés. La suite Postgres n'a pas été relancée (aucun code de base de données de `src/` n'a changé).
+- **Données utiles :** limites du tier 1 : `gemini-3.1-pro-preview` 25 RPM et 250 RPD ; prix (USD par million de jetons) : 3.1 Pro 2 $ en entrée, 12 $ en sortie (réflexion comprise). À partir du 2026-12-01, `gemini-2.5-flash` est redirigé vers `gemini-3.5-flash-lite`. Doublons opaques : `tsa-00-opaque`, `tsa-01-opaque`, `tsa-02-opaque` et `tsa-05-opaque` utilisent les copies `tsa-00`, `tsa-01`, `tsa-02` et `tsa-05`.
 
 ## Prochaines étapes, dans l'ordre
-1. **Côté Abdou, en parallèle :** l'échange de découverte avec les journalistes (§9 du cahier des charges), avant la mise en service pour l'équipe. Questions à ajouter :
+1. **Passe du LLM-juge** sur les 252 éléments étiquetés, calibrée contre les étiquettes humaines (kappa). Verdicts stockés à part, jamais à la place d'une étiquette.
+2. **Optionnel :** étiqueter les 150 `found` hors audit de `url_only` pour remplacer le plancher par un chiffre exact (environ 1 h pour Abdou).
+3. **Palier 2 :** tranche verticale de la v2 (pas commencée).
+4. **Palier 3 :** premier passage sur la VM Oracle Ampere (ARM64), voir en haut, avec Caddy et DuckDNS en attendant le sous-domaine. **Côté Abdou, avant la mise en service pour l'équipe :** l'échange de découverte avec les journalistes (§9 du cahier des charges), avec ces questions en plus :
    - un sous-domaine de dzdia.com pour le webhook (par exemple `bot.dzdia.com`) ;
    - l'identifiant du groupe Telegram de l'équipe ;
    - les identifiants Telegram des journalistes, pour la liste blanche.
-2. **Premier passage sur la VM Oracle Ampere (ARM64)** : voir en haut. Caddy et DuckDNS en attendant le sous-domaine.
-3. **Reprendre `extract` puis `match`** (choisir d'abord le modèle extracteur, voir « En pause » ; corriger B7 avant `match`), et inspecter la répartition trouvé / non trouvé par type. Ajuster `--name-threshold` si nécessaire.
-4. **Étiquetage :** `export-labels`, étiquetage S/C/N par Abdou dans Excel, puis `import-labels` et `report`. Commiter `labels.jsonl` et `report.md`.
-5. **Passe parallèle du LLM-juge** sur les mêmes éléments. Les verdicts sont stockés à part, pour la calibration en semaine 5.
 
 ## Petits points en suspens
 - **Le webhook du bot de dev pointe encore sur une URL trycloudflare morte**, car la pile de dev est arrêtée. Telegram garde les updates en attente (environ 24 h). Pour reprendre les tests en local : `docker compose --profile dev up -d --build`, lire la nouvelle URL dans `docker compose logs cloudflared`, puis relancer `set-webhook`. Le volume `pgdata` de dev contient le job de test (statut `done`).
-- **`.env.example`** : Abdou doit vérifier qu'il liste toutes les variables (`POSTGRES_PASSWORD`, `TELEGRAM_*`, `LOG_FORMAT`, `LOG_LEVEL`, `PUBLIC_HOST`, `API_PORT`, `POSTGRES_PORT`, et depuis l'ADR-0007 `BACKUP_AGE_RECIPIENT`, `BACKUP_BUCKET`, `BACKUP_HEALTHCHECK_URL`, `OCI_NAMESPACE`, `OCI_COMPARTMENT_OCID`, `OCI_REGION`), car Claude ne peut pas le lire.
+- **`.env.example`** : Abdou doit vérifier qu'il liste toutes les variables (`POSTGRES_PASSWORD`, `TELEGRAM_*`, `LOG_FORMAT`, `LOG_LEVEL`, `PUBLIC_HOST`, `API_PORT`, `POSTGRES_PORT`, et depuis l'ADR-0007 `BACKUP_AGE_RECIPIENT`, `BACKUP_BUCKET`, `BACKUP_HEALTHCHECK_URL`, `OCI_NAMESPACE`, `OCI_COMPARTMENT_OCID`, `OCI_REGION`, et depuis l'ADR-0008 `EXTRACTION_MODEL`, `EXTRACTION_THINKING_LEVEL`, `LLM_MAX_RPM`), car Claude ne peut pas le lire.
 - **S2-C (scan Trivy de l'image)** : à reconsidérer maintenant que la VM arrive.
 - **Avertissements de pytest, sans effet aujourd'hui :** `StarletteDeprecationWarning`, car `TestClient` utilise httpx ; `_UnionGenericAlias`, qui vient de google-genai.
 - **Image Docker de 401 Mo** (406 Mo avant S1) : les dépendances des évals (trafilatura, google-genai) y sont incluses. On les garde, car la v2 s'en servira dès la semaine 2.
