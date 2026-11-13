@@ -118,6 +118,8 @@ src/dzdia_newsroom/
 ├── api/          FastAPI app: webhook route, health probe, entry point
 ├── channels/     Channel protocol, InboundMessage, Telegram adapter (parse + Bot API client + CLI)
 ├── db/           connection pool, migrations runner and SQL files, JobRepository, row models
+├── llm/          Gemini client (retries, spacing, per-call logs with cost), FakeLLM, shared with the evals
+├── tools/        evidence items, article generation and validation (v2 slice, ADR-0009)
 ├── worker/       queue engine (Worker, retries, heartbeat, LISTEN), job handlers, entry point
 ├── config.py     typed settings, one class per process role (least privilege)
 ├── logging_setup.py   JSON log formatter
@@ -142,10 +144,10 @@ These rules hold across the codebase. Some are enforced today; the others are co
 | Secrets are distributed per process; the API never holds the bot token. | Enforced |
 | Messages sent to Telegram are plain text: no `parse_mode`, so model output can never break or inject markup. | Enforced |
 | Logs never contain secrets or message text. | Enforced (token redaction, `httpx` logs silenced, payload values kept out of errors) |
-| The LLM never produces URLs, ids or trust scores: it cites ids it was given; code resolves and validates them. | Planned (week 2, structured outputs) |
+| The LLM never produces URLs, ids or trust scores: it cites ids it was given; code resolves and validates them. | In progress: evidence ids and quote checks in `tools/article.py` (ADR-0009, 0011) |
 | External content (web, social, transcripts) is untrusted: delimited in prompts, never able to trigger write tools. | Planned (week 2-4) |
 | Any write tool (WordPress) requires a persisted `APPROVED` workflow state. | Planned (week 2) |
-| Tools live in `tools/`; Telegram and MCP are thin adapters over them. | Planned |
+| Tools live in `tools/`; Telegram and MCP are thin adapters over them. | In progress: `tools/evidence.py` and `tools/article.py` exist, not wired to the worker yet |
 
 ## Quality attributes
 

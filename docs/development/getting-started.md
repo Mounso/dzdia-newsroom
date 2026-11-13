@@ -55,6 +55,8 @@ psycopg's async mode does not work on Windows' default `ProactorEventLoop`. The 
 │   ├── api/                   FastAPI app: Telegram webhook and /health, entry point `python -m dzdia_newsroom.api`
 │   ├── channels/              platform adapters: Channel protocol, InboundMessage, Telegram parser, client and CLI
 │   ├── db/                    connection pool, migration runner, SQL migrations, job repository and row models
+│   ├── llm/                   Gemini client (retries, request spacing, per-call logs), FakeLLM for tests
+│   ├── tools/                 v2 tools: evidence items, article generation and validation
 │   ├── worker/                job queue worker (lease, heartbeat, retries), handlers, entry point
 │   ├── config.py              typed settings, one class per process need
 │   ├── logging_setup.py       JSON log formatter and logging configuration

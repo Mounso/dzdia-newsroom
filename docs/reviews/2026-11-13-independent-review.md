@@ -13,10 +13,16 @@ Added after the review; the findings below are unchanged. A finding not listed h
 | V-3 | Accepted: the conclusion for each outcome is written before the run | 2026-11-13 | ADR-0010, points 9 to 11 |
 | V-4 | Accepted: every element of the article task is labeled in every arm | 2026-11-13 | ADR-0010, point 6 |
 | V-5 | Accepted: a mandatory `plain_prompt` arm; validator counters instead of a "v2 without validator" arm | 2026-11-13 | ADR-0010, points 2, 10 and 11 |
-| V-6 | Taken into account: temperature is checked by a few calls before the run | 2026-11-13 | ADR-0010, point 13 |
+| V-6 | Taken into account: temperature is checked by a few calls before the run. Spike of 2026-11-13, `gemini-3.1-flash-lite-preview`, 2 pages outside the sample: at temperature 0, 3 calls gave the same output on each page; at temperature 1, 3 different outputs. Temperature is honored | 2026-11-13 | ADR-0010, point 13 |
 | V-10 | Taken into account for the eval: every arm receives the frozen snapshot text | 2026-11-13 | ADR-0010, point 3 |
 | E-5 | Accepted: blind labeling, guide frozen before the export, committed check scripts | 2026-11-13 | ADR-0010, point 8 |
 | V-12 | Accepted: generation and eval come before fetching, the SSRF guard and Telegram | 2026-11-13 | [Roadmap](../roadmap.md#next-steps) |
+| C-1 | Accepted and fixed: a heartbeat that raises or hangs is tried again while the lease lasts; the handler is cancelled only `lease_margin_s` before its end, with no retry scheduled | 2026-11-13 | `worker/queue.py`, [job queue](../architecture/job-queue.md#lease-heartbeat-and-fencing) |
+| C-2 | Accepted and fixed: timeouts and connection errors are retried, one log line per attempt (latency, tokens, estimated cost), timeout 120 s (`LLM_TIMEOUT_S`) | 2026-11-13 | `src/dzdia_newsroom/llm/` |
+| C-3 | Taken into account in the client: `StructuredOutputError` keeps the raw output in an attribute, never in its message | 2026-11-13 | `llm/base.py` |
+| V-9 | Accepted: invalid, truncated, empty or blocked output is an `unparsable` issue that uses the single retry; API errors and timeouts are retried by the client and use no retry | 2026-11-13 | `generate_article` docstring and tests (`tools/article.py`) |
+| V-17 | Accepted: evidence tags inside page text are neutralized in the prompt (closing and opening ones); a split never falls inside quotation marks | 2026-11-13 | `tools/evidence.py` |
+| V-18 | Checked by a spike on 3 pages outside the sample: a discriminated union is rejected by the SDK with `response_schema`; a plain union works (3/3), and so does `response_json_schema`. The schema uses a plain union | 2026-11-13 | `tools/article.py` |
 
 ## Scope and method
 

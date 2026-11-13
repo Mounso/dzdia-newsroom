@@ -3,7 +3,8 @@ from typing import Any
 import pytest
 from google.genai import errors
 
-from evals.baseline_v1.llm import RequestSpacer, gemini_retry_delay, retry_async
+from dzdia_newsroom.llm.gemini import gemini_retry_delay
+from dzdia_newsroom.llm.retry import RequestSpacer, retry_async
 
 
 class Transient(Exception):

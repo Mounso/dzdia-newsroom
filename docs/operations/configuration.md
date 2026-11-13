@@ -31,12 +31,14 @@ This page lists every environment variable the system reads, which process reads
 | `OCI_NAMESPACE` | compose (`rclone`, profile `ops`) | Yes for uploads | — | Object Storage namespace of the tenancy (console: Tenancy details). |
 | `OCI_COMPARTMENT_OCID` | compose (`rclone`) | Yes for uploads | — | OCID of the compartment that holds the bucket. |
 | `OCI_REGION` | compose (`rclone`) | Yes for uploads | — | Region identifier, e.g. `eu-marseille-1`. |
-| `GEMINI_API_KEY` | eval harness (`Settings`) | Yes for `evals.baseline_v1` LLM steps | — | Google Gemini API key. Not passed to any compose service. |
-| `V1_MODEL` | eval harness (`Settings`) | No | `gemini-3.1-flash-lite-preview` | Model used to replay the legacy v1 prompts. |
-| `EXTRACTION_MODEL` | eval harness (`Settings`) | No | `gemini-3.1-pro-preview` | Model used to extract critical elements ([ADR-0008](../adr/0008-baseline-extractor-model.md)). |
-| `LLM_MAX_RPM` | eval harness (`Settings`) | No | `20` | Requests per minute per Gemini client: request starts are spaced by `60 / LLM_MAX_RPM` seconds, retries included (R8). |
-| `EXTRACTION_THINKING_LEVEL` | eval harness (`Settings`) | No | `low` | Thinking level of the extractor: `minimal`, `low`, `medium` or `high` (the levels a model accepts vary). Applies to the extractor only, never to the v1 model under test. |
-| `LLM_MAX_CONCURRENCY` | eval harness (`Settings`) | No | `2` | Maximum concurrent LLM calls in the eval harness. |
+| `GEMINI_API_KEY` | LLM client (`LLMSettings`) | Yes for LLM calls (eval steps, and the v2 generator once wired) | — | Google Gemini API key. Not passed to any compose service yet. |
+| `V1_MODEL` | eval harness (`LLMSettings`) | No | `gemini-3.1-flash-lite-preview` | Model used to replay the legacy v1 prompts. |
+| `EXTRACTION_MODEL` | eval harness (`LLMSettings`) | No | `gemini-3.1-pro-preview` | Model used to extract critical elements ([ADR-0008](../adr/0008-baseline-extractor-model.md)). |
+| `LLM_MAX_RPM` | LLM client (`LLMSettings`) | No | `20` | Requests per minute per Gemini client: request starts are spaced by `60 / LLM_MAX_RPM` seconds, retries included (R8). |
+| `LLM_TIMEOUT_S` | LLM client (`LLMSettings`) | No | `120` | Timeout of one Gemini request, in seconds. Timeouts and connection errors are retried like 429 and 5xx (review finding C-2). |
+| `GENERATION_MODEL` | v2 generator (`LLMSettings`) | No | `gemini-3.1-flash-lite-preview` | Model that writes the v2 article ([ADR-0009](../adr/0009-v2-link-to-sourced-article-slice.md), point 11): the v1 model, so the v2 eval measures the architecture. |
+| `EXTRACTION_THINKING_LEVEL` | eval harness (`LLMSettings`) | No | `low` | Thinking level of the extractor: `minimal`, `low`, `medium` or `high` (the levels a model accepts vary). Applies to the extractor only, never to the v1 model under test. |
+| `LLM_MAX_CONCURRENCY` | LLM client (`LLMSettings`) | No | `2` | Maximum concurrent calls per Gemini client. |
 
 `migrate` reads `LOG_FORMAT` and `LOG_LEVEL` from its environment, but compose does not pass them to it today, so it uses the defaults.
 

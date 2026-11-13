@@ -52,6 +52,9 @@ class JobStore(Protocol):
 class WorkerConfig:
     lease_s: float = 60.0
     heartbeat_s: float = 20.0  # well below lease_s: two missed beats still keep the lease
+    # A failed heartbeat is retried until this close to the lease's end; then the handler is
+    # cancelled, before another worker can reclaim the job and run it twice (C-1).
+    lease_margin_s: float = 5.0
     poll_s: float = 5.0  # fallback when a NOTIFY is missed
     retry_base_s: float = 5.0
     retry_cap_s: float = 300.0
@@ -65,6 +68,8 @@ class WorkerConfig:
     def __post_init__(self) -> None:
         if not 0 < self.heartbeat_s < self.lease_s:
             raise ValueError("heartbeat_s must be positive and shorter than lease_s")
+        if not 0 < self.lease_margin_s < self.lease_s - self.heartbeat_s:
+            raise ValueError("lease_margin_s must be positive and below lease_s - heartbeat_s")
 
 
 DEFAULT_CONFIG = WorkerConfig()
@@ -89,11 +94,13 @@ class Worker:
         handlers: Mapping[str, Handler],
         config: WorkerConfig = DEFAULT_CONFIG,
         rand: Callable[[], float] = random.random,
+        clock: Callable[[], float] = time.monotonic,
     ) -> None:
         self._store = store
         self._handlers = handlers
         self._config = config
         self._rand = rand
+        self._clock = clock
 
     async def run_forever(self, wake: asyncio.Event, stop: asyncio.Event | None = None) -> None:
         """Drain the queue, then sleep until `wake` is set (by NOTIFY) or `poll_s` elapses.
@@ -123,13 +130,16 @@ class Worker:
 
     async def run_once(self) -> bool:
         """Claim and process one job. Returns False when no job is ready."""
+        # Taken before the claim: the database starts the lease during the call, so the local
+        # deadline errs on the early side.
+        claimed_at = self._clock()
         job = await self._store.claim(self._config.lease_s)
         if job is None:
             return False
-        await self._process(job)
+        await self._process(job, claimed_at + self._config.lease_s)
         return True
 
-    async def _process(self, job: ClaimedJob) -> None:
+    async def _process(self, job: ClaimedJob, lease_deadline: float) -> None:
         log_ctx = f"job {job.id} ({job.kind}, attempt {job.attempts}/{job.max_attempts})"
         if job.attempts > job.max_attempts:
             # Only reachable when the lease of the last attempt expired (worker crash).
@@ -142,7 +152,7 @@ class Worker:
 
         started = time.perf_counter()
         try:
-            kept_lease = await self._run_with_heartbeat(job, handler)
+            kept_lease = await self._run_with_heartbeat(job, handler, lease_deadline, log_ctx)
         except asyncio.CancelledError:
             # Worker shutdown: not the job's fault, so it must not cost an attempt.
             await self._release(job, log_ctx)
@@ -208,26 +218,60 @@ class Worker:
         else:
             logger.warning("%s: lease lost before it could be released", log_ctx)
 
-    async def _run_with_heartbeat(self, job: ClaimedJob, handler: Handler) -> bool:
+    async def _run_with_heartbeat(
+        self, job: ClaimedJob, handler: Handler, lease_deadline: float, log_ctx: str
+    ) -> bool:
         """Run the handler while renewing the lease. Returns False (handler cancelled) when the
-        lease is lost; re-raises the handler's exception otherwise."""
+        lease is lost; re-raises the handler's exception otherwise.
+
+        A heartbeat that raises or hangs (pool timeout, dropped connection) does not mean the
+        lease is lost: it is tried again while the lease lasts, sooner as its end nears. Only
+        `lease_margin_s` before the deadline is the handler cancelled, so that the job never
+        runs on two workers at once. `extend_lease` returning False means another worker owns
+        the job: the handler is cancelled at once."""
+        cfg = self._config
         task = asyncio.create_task(handler(job))
         try:
             while not task.done():
-                await asyncio.wait({task}, timeout=self._config.heartbeat_s)
-                if not task.done() and not await self._store.extend_lease(
-                    job, self._config.lease_s
-                ):
-                    task.cancel()
-                    await asyncio.wait({task})
+                remaining = lease_deadline - self._clock() - cfg.lease_margin_s
+                if remaining <= 0:
+                    logger.warning("%s: lease not renewed in time, handler cancelled", log_ctx)
+                    await _cancel(task)
                     return False
+                await asyncio.wait({task}, timeout=min(cfg.heartbeat_s, remaining))
+                if task.done():
+                    break
+                beat_started = self._clock()
+                if lease_deadline - beat_started <= cfg.lease_margin_s:
+                    continue  # too late to renew safely: the check above cancels
+                try:
+                    kept = await asyncio.wait_for(
+                        self._store.extend_lease(job, cfg.lease_s),
+                        timeout=lease_deadline - beat_started - cfg.lease_margin_s,
+                    )
+                except Exception as exc:
+                    logger.warning(
+                        "%s: heartbeat failed (%s), lease valid for %.1f s more",
+                        log_ctx,
+                        _describe(exc),
+                        max(0.0, lease_deadline - self._clock()),
+                    )
+                    continue
+                if not kept:
+                    await _cancel(task)
+                    return False
+                lease_deadline = beat_started + cfg.lease_s
         except BaseException:
-            # Worker shutdown or heartbeat failure: never leave the handler running unowned.
-            task.cancel()
-            await asyncio.wait({task})
+            # Worker shutdown: never leave the handler running unowned.
+            await _cancel(task)
             raise
         task.result()
         return True
+
+
+async def _cancel(task: "asyncio.Task[None]") -> None:
+    task.cancel()
+    await asyncio.wait({task})
 
 
 async def listen_for_jobs(

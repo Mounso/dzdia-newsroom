@@ -9,7 +9,9 @@ This page describes how the test suite is organized, how to run it (including th
 | `tests/api/` | unit | Webhook: secret check, allowlist, status codes, deduplication, no exposed docs |
 | `tests/channels/` | unit | Telegram update parsing; Bot API client retries, `retry_after`, error classes, token redaction |
 | `tests/worker/` | unit | Queue worker (completion, retries, dead jobs, heartbeat, lost lease, graceful stop) and handlers |
-| `tests/evals/` | unit | Baseline harness: sampling, snapshots, runner, extraction, matcher, labeling, report, LLM retry |
+| `tests/evals/` | unit | Baseline harness: sampling, snapshots, runner, extraction, matcher, labeling, report |
+| `tests/llm/` | unit | Gemini client: retry policy (429, 5xx, timeouts, connection errors), `retryDelay`, request spacing, per-attempt logs, typed structured-output errors, v1 defaults kept; `FakeLLM`; cost estimate |
+| `tests/tools/` | unit | Evidence splitting and prompt delimiters; article schema, quote check, quote removal, rendering. `test_article_kata.py` is the specification of Abdou's kata (`find_issues`, `generate_article`): expected failures on `NotImplementedError` until he writes them |
 | `tests/test_config.py`, `tests/test_logging_setup.py` | unit | Settings parsing and validation; JSON log format |
 | `tests/test_supply_chain.py` | static | Every image and action is pinned; CI, `Dockerfile` and compose agree (see [conventions](conventions.md#dependencies-and-supply-chain)) |
 | `tests/test_deploy_guards.py` | static | Only `caddy` publishes ports outside `127.0.0.1`; app services run the `dzdia-newsroom:local` image that `deploy.sh` retags; deployment scripts are strict (`set -euo pipefail`), LF-only and call `main` on their last line ([ADR-0007](../adr/0007-production-host-on-oracle-cloud.md)) |
@@ -17,7 +19,8 @@ This page describes how the test suite is organized, how to run it (including th
 
 Shared test doubles:
 
-- `FakeStore` in `tests/worker/test_queue.py`: an in-memory `JobStore` that records every call the worker makes.
+- `FakeStore` in `tests/worker/test_queue.py`: an in-memory `JobStore` that records every call the worker makes; it can also make heartbeats raise or hang.
+- `FakeLLM` in `src/dzdia_newsroom/llm/fake.py`: a scripted LLM that returns models, parses raw text like the real client, or raises.
 - `FakeChannel` in `tests/worker/test_handlers.py`: records the messages a handler sends.
 - `FakeJobs` in `tests/api/test_webhook.py`: an in-memory `JobEnqueuer` for the FastAPI app.
 - `FakeTextGenerator` and `FakeStructuredGenerator` in `tests/evals/fakes.py`: LLM generators returning canned outputs.

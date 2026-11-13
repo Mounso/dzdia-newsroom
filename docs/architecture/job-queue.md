@@ -64,13 +64,17 @@ RETURNING id, kind, payload, attempts, max_attempts, claim_token
 |---|---|---|
 | `lease_s` | 60 s | How long a claim stays valid without renewal. |
 | `heartbeat_s` | 20 s | Renewal period while the handler runs; must be shorter than `lease_s` (two beats can be missed). |
+| `lease_margin_s` | 5 s | A heartbeat that fails is tried again until this close to the end of the lease; then the handler is cancelled. Must be below `lease_s - heartbeat_s`. |
 | `poll_s` | 5 s | Fallback wake-up period when no `NOTIFY` arrives. |
 | `retry_base_s`, `retry_cap_s` | 5 s, 300 s | Backoff parameters. |
 | `max_retry_after_s` | 3600 s | A longer retry-after kills the job: an answer hours late is no longer useful. |
 | `retry_after_jitter` | 0.1 | Extra wait after a retry-after, as a fraction of it, drawn at random. |
 | `release_timeout_s` | 3 s | Upper bound on releasing the current job at shutdown. |
 
-The handler runs in its own task. The worker waits for it in slices of `heartbeat_s` and extends the lease between slices. If the extension fails (another worker reclaimed the job), the handler is cancelled and its result discarded.
+The handler runs in its own task. The worker waits for it in slices of `heartbeat_s` and extends the lease between slices. Two failures are told apart (review finding C-1):
+
+- **The lease is lost** (`extend_lease` returns `False`: another worker reclaimed the job): the handler is cancelled at once and its result discarded.
+- **The heartbeat itself fails** (it raises, or hangs past the lease's end, e.g. a pool timeout or a dropped connection): the lease may still be valid, so the handler keeps running and the extension is tried again, sooner as the lease's end nears. Only `lease_margin_s` before the locally computed end of the lease (taken from the time just before the claim, so it errs early) is the handler cancelled, without a retry being scheduled: the expired lease gives the job back to the queue, as for a lost lease, and the job never runs on two workers at once. With the defaults, two missed beats keep the job; a third try comes 5 s before the end.
 
 The lease alone is not enough: a worker paused by a long GC, a network partition or a suspended VM can wake up after its lease expired and another worker took over. The **claim token** fences it out: every `UPDATE` after the claim includes `WHERE id = … AND claim_token = … AND status = 'running'`, so the stale worker's `complete`, `retry_later`, `mark_dead` or `release` matches no row and returns `False`.
 

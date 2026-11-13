@@ -5,7 +5,7 @@ import unicodedata
 from collections import Counter
 from datetime import UTC, datetime
 
-from evals.baseline_v1.llm import StructuredGenerator
+from dzdia_newsroom.llm import StructuredGenerator
 from evals.baseline_v1.schemas import (
     ElementRecord,
     ElementType,

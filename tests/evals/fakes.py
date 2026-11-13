@@ -4,7 +4,7 @@ from collections.abc import Callable
 
 from pydantic import BaseModel
 
-from evals.baseline_v1.llm import Generation, Structured, Usage
+from dzdia_newsroom.llm import Generation, Structured, Usage
 
 
 class FakeTextGenerator:

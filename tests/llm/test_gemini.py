@@ -6,7 +6,7 @@ import pytest
 from google.genai import types
 from pydantic import BaseModel
 
-from evals.baseline_v1.llm import GeminiClient, Usage
+from dzdia_newsroom.llm import GeminiClient, Usage
 
 
 class _Out(BaseModel):

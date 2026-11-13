@@ -14,7 +14,7 @@ These hold for all code, present and future. A change that breaks one needs an A
 - **No agent framework.** The agent loop is hand-written in `agent/loop.py`, so every step is visible, typed and testable.
 - **Copyrighted article text and raw model outputs stay in `evals/.data/`.** That directory is gitignored and excluded from the Docker build context.
 
-The `tools/` and `agent/` packages and the workflow state do not exist yet: they arrive with the week 2 features.
+The `tools/` package has its first two modules (`evidence.py`, `article.py`, stage 2 of the roadmap); the `agent/` package and the workflow state do not exist yet.
 
 ## Engineering standards
 

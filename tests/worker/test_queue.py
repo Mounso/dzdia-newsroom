@@ -25,6 +25,7 @@ FAST = WorkerConfig(
     max_retry_after_s=3600,
     retry_after_jitter=0.1,
     release_timeout_s=0.05,
+    lease_margin_s=0.1,
 )
 
 
@@ -53,12 +54,17 @@ class FakeStore:
     release_started: asyncio.Event = field(default_factory=asyncio.Event)
     release_stall_s: float = 0.0  # a slow database at shutdown
     release_owned: bool = True  # False: the job was reclaimed just before the shutdown
+    extend_failures: int = 0  # heartbeats that raise first; -1: every one
+    extend_stall_s: float = 0.0  # how long a failing heartbeat hangs before raising
 
     async def claim(self, lease_s: float) -> ClaimedJob | None:
         return self.jobs.pop(0) if self.jobs else None
 
     async def extend_lease(self, job: ClaimedJob, lease_s: float) -> bool:
         self.extensions += 1
+        if self.extend_failures < 0 or self.extensions <= self.extend_failures:
+            await asyncio.sleep(self.extend_stall_s)
+            raise ConnectionError("database unreachable")
         return self.lease_kept
 
     async def complete(self, job: ClaimedJob) -> bool:
@@ -243,6 +249,52 @@ async def test_lost_lease_cancels_handler_and_skips_completion() -> None:
     await asyncio.wait_for(worker(store, {"echo": long_running}).run_once(), timeout=1)
     assert cancelled.is_set()
     assert not store.completed and not store.retried and not store.dead
+
+
+async def test_a_failed_heartbeat_does_not_cancel_the_job() -> None:
+    """C-1: one database error during a heartbeat must not throw the work away."""
+
+    async def slow(job: ClaimedJob) -> None:
+        await asyncio.sleep(0.1)
+
+    store = FakeStore(jobs=[make_job()], extend_failures=2)
+    await worker(store, {"echo": slow}).run_once()
+    assert store.extensions > 2
+    assert store.completed == [1] and not store.retried and not store.dead
+
+
+async def test_heartbeats_failing_until_the_lease_ends_cancel_the_job_in_time() -> None:
+    cancelled_at: list[float] = []
+    loop = asyncio.get_running_loop()
+    started = loop.time()
+
+    async def long_running(job: ClaimedJob) -> None:
+        try:
+            await asyncio.sleep(10)
+        except asyncio.CancelledError:
+            cancelled_at.append(loop.time() - started)
+            raise
+
+    store = FakeStore(jobs=[make_job()], extend_failures=-1)
+    await asyncio.wait_for(worker(store, {"echo": long_running}).run_once(), timeout=2)
+    # Cancelled before the lease ends (1 s), so another worker cannot run it at the same time.
+    assert cancelled_at and cancelled_at[0] < FAST.lease_s
+    # No retry was scheduled: the expired lease gives the job back, as for a lost lease.
+    assert not store.completed and not store.retried and not store.dead
+
+
+async def test_a_hanging_heartbeat_is_bounded_by_the_lease() -> None:
+    async def long_running(job: ClaimedJob) -> None:
+        await asyncio.sleep(10)
+
+    store = FakeStore(jobs=[make_job()], extend_failures=-1, extend_stall_s=30)
+    await asyncio.wait_for(worker(store, {"echo": long_running}).run_once(), timeout=2)
+    assert not store.completed and not store.retried and not store.dead
+
+
+async def test_config_rejects_a_margin_that_leaves_no_time_to_beat() -> None:
+    with pytest.raises(ValueError):
+        WorkerConfig(lease_s=60, heartbeat_s=20, lease_margin_s=40)
 
 
 async def start_long_job(store: FakeStore) -> tuple["asyncio.Task[bool]", asyncio.Event]:

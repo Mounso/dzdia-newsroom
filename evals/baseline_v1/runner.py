@@ -5,7 +5,7 @@ from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
-from evals.baseline_v1.llm import TextGenerator
+from dzdia_newsroom.llm import TextGenerator
 from evals.baseline_v1.schemas import Condition, RunRecord, SampleItem, Task
 from evals.baseline_v1.v1_prompts import PROMPT_VERSION, build_prompt
 

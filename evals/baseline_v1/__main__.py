@@ -8,10 +8,10 @@ from typing import cast, get_args
 
 import httpx
 
+from dzdia_newsroom.llm import GeminiClient
 from evals.baseline_v1.extract import extract_run
 from evals.baseline_v1.jsonl import append_jsonl, latest_by, read_jsonl, write_jsonl
 from evals.baseline_v1.labeling import read_label_sheet, select_for_labeling, write_label_sheet
-from evals.baseline_v1.llm import GeminiClient
 from evals.baseline_v1.matcher import DEFAULT_NAME_THRESHOLD, SourceIndex, match_element
 from evals.baseline_v1.paths import Paths
 from evals.baseline_v1.report import build_report
@@ -47,14 +47,15 @@ def _http_client() -> httpx.AsyncClient:
 
 
 def _gemini(model_attr: str, thinking_level: str | None = None) -> GeminiClient:
-    from dzdia_newsroom.config import get_settings
+    from dzdia_newsroom.config import get_llm_settings
 
-    settings = get_settings()
+    settings = get_llm_settings()
     return GeminiClient(
         settings.gemini_api_key.get_secret_value(),
         model=getattr(settings, model_attr),
         max_concurrency=settings.llm_max_concurrency,
         max_rpm=settings.llm_max_rpm,
+        timeout_s=settings.llm_timeout_s,
         thinking_level=thinking_level,
     )
 
@@ -155,9 +156,9 @@ async def cmd_extract(paths: Paths) -> None:
         for r in runs.values()
         if r.error is None and (r.run_id not in previous or previous[r.run_id].error is not None)
     ]
-    from dzdia_newsroom.config import get_settings
+    from dzdia_newsroom.config import get_llm_settings
 
-    generator = _gemini("extraction_model", get_settings().extraction_thinking_level)
+    generator = _gemini("extraction_model", get_llm_settings().extraction_thinking_level)
     print(f"Extracting {len(todo)} runs with {generator.model} ({generator.thinking_level})")
     elements = {e.element_id: e for e in read_jsonl(paths.elements, ElementRecord)}
     tokens = {"input": 0, "output": 0, "thinking": 0}

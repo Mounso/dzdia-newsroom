@@ -3,8 +3,8 @@ from datetime import UTC, datetime
 
 from pydantic import BaseModel
 
+from dzdia_newsroom.llm import Structured
 from evals.baseline_v1.extract import build_extraction_prompt, element_id, extract_run
-from evals.baseline_v1.llm import Structured
 from evals.baseline_v1.schemas import RunRecord
 from tests.evals.fakes import FakeStructuredGenerator
 

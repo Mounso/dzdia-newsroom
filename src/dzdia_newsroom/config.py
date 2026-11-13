@@ -20,7 +20,9 @@ _ENV = SettingsConfigDict(
 _WEBHOOK_SECRET = re.compile(r"[A-Za-z0-9_-]{32,256}")
 
 
-class Settings(BaseSettings):
+class LLMSettings(BaseSettings):
+    """Gemini access, shared by the v2 generator and the evals."""
+
     model_config = _ENV
 
     gemini_api_key: SecretStr
@@ -30,13 +32,18 @@ class Settings(BaseSettings):
     # the model's default.
     extraction_model: str = "gemini-3.1-pro-preview"
     extraction_thinking_level: Literal["minimal", "low", "medium", "high"] | None = "low"
+    # Generator of the v2 slice (ADR-0009, point 11): the v1 model, so that the v2 eval measures
+    # the architecture, not a model change.
+    generation_model: str = "gemini-3.1-flash-lite-preview"
     llm_max_concurrency: int = 2
     # Requests per minute per client, below the tier-1 limit of the extractor (25, ADR-0008).
     llm_max_rpm: int = 20
+    # Per request; retries get the same budget (C-2: the old 90 s sat 2 s above the slowest call).
+    llm_timeout_s: float = 120.0
 
 
 class DatabaseSettings(BaseSettings):
-    """Kept apart from `Settings` so DB commands (migrations, worker) need no LLM key."""
+    """Kept apart from `LLMSettings` so DB commands (migrations, worker) need no LLM key."""
 
     model_config = _ENV
 
@@ -85,8 +92,8 @@ class TelegramBotSettings(BaseSettings):
 
 
 @lru_cache
-def get_settings() -> Settings:
-    return Settings()  # values come from the environment
+def get_llm_settings() -> LLMSettings:
+    return LLMSettings()  # values come from the environment
 
 
 @lru_cache
