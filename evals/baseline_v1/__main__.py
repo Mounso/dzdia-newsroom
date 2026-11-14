@@ -11,7 +11,12 @@ import httpx
 from dzdia_newsroom.llm import GeminiClient
 from evals.baseline_v1.extract import extract_run
 from evals.baseline_v1.jsonl import append_jsonl, latest_by, read_jsonl, write_jsonl
-from evals.baseline_v1.labeling import read_label_sheet, select_for_labeling, write_label_sheet
+from evals.baseline_v1.labeling import (
+    committed_note,
+    read_label_sheet,
+    select_for_labeling,
+    write_label_sheet,
+)
 from evals.baseline_v1.matcher import DEFAULT_NAME_THRESHOLD, SourceIndex, match_element
 from evals.baseline_v1.paths import Paths
 from evals.baseline_v1.report import build_report
@@ -217,7 +222,11 @@ def cmd_import_labels(paths: Paths) -> None:
     labels = latest_by(read_jsonl(paths.labels, HumanLabel), lambda lab: lab.element_id)
     new = read_label_sheet(paths.label_sheet)
     labels.update({lab.element_id: lab for lab in new})
-    write_jsonl(paths.labels, labels.values())
+    # The file is rewritten whole: labels imported before notes were reduced lose their text too.
+    write_jsonl(
+        paths.labels,
+        (lab.model_copy(update={"note": committed_note(lab.note)}) for lab in labels.values()),
+    )
     print(f"Imported {len(new)} labels, {len(labels)} total -> {paths.labels}")
 
 

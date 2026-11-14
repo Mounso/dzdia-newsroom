@@ -1,15 +1,21 @@
+import csv
 from pathlib import Path
 
 import pytest
 
+from evals.baseline_v1.__main__ import cmd_import_labels
+from evals.baseline_v1.jsonl import read_jsonl, write_jsonl
 from evals.baseline_v1.labeling import (
+    SPEAKER_MARKER,
+    committed_note,
     in_audit_sample,
     parse_label,
     read_label_sheet,
     select_for_labeling,
     write_label_sheet,
 )
-from evals.baseline_v1.schemas import ElementRecord
+from evals.baseline_v1.paths import Paths
+from evals.baseline_v1.schemas import ElementRecord, HumanLabel
 
 
 def _element(element_id: str, status: str) -> ElementRecord:
@@ -53,6 +59,62 @@ def test_label_sheet_round_trip(tmp_path: Path) -> None:
 
     labels = read_label_sheet(sheet)
     assert [(lab.element_id, lab.label) for lab in labels] == [("a#0", "NOT_IN_SOURCE")]
+
+
+def _sheet_with_notes(path: Path, notes: dict[str, str]) -> None:
+    """A sheet whose rows (one per element id) are labeled S with the given note."""
+    write_label_sheet(path, [_element(element_id, "not_found") for element_id in notes])
+    with path.open(encoding="utf-8-sig", newline="") as f:
+        rows = list(csv.DictReader(f, delimiter=";"))
+    for row in rows:
+        row["label"], row["note"] = "S", notes[row["element_id"]]
+    with path.open("w", encoding="utf-8-sig", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=list(rows[0]), delimiter=";")
+        writer.writeheader()
+        writer.writerows(rows)
+
+
+def test_committed_note_keeps_only_the_speaker_marker() -> None:
+    assert SPEAKER_MARKER == "locuteur"
+    assert committed_note("the article says « le 4 mai »") == ""
+    assert committed_note("Mauvais LOCUTEUR : Ali") == "locuteur"
+    assert committed_note(" Locuteur ") == "locuteur"
+    assert committed_note("") == ""
+
+
+def test_the_sheet_note_is_reduced_on_read(tmp_path: Path) -> None:
+    sheet = tmp_path / "to_label.csv"
+    _sheet_with_notes(sheet, {"a#0": "texte libre", "b#0": "mauvais Locuteur : X", "c#0": ""})
+    notes = {lab.element_id: lab.note for lab in read_label_sheet(sheet)}
+    assert notes == {"a#0": "", "b#0": "locuteur", "c#0": ""}
+
+
+def test_a_sheet_without_a_note_cell_gives_an_empty_note(tmp_path: Path) -> None:
+    sheet = tmp_path / "to_label.csv"
+    sheet.write_text("element_id;label\na#0;S\n", encoding="utf-8-sig")
+    assert [lab.note for lab in read_label_sheet(sheet)] == [""]
+
+
+def test_import_rewrites_every_label_without_free_text(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    paths = Paths(dataset_dir=tmp_path / "dataset", data_dir=tmp_path / "data")
+    old = [
+        HumanLabel(element_id="old#0", label="CONTRADICTED", note="texte cité de l'article"),
+        HumanLabel(element_id="kept#0", label="CONTRADICTED", note="mauvais locuteur : X"),
+    ]
+    write_jsonl(paths.labels, old)
+    _sheet_with_notes(paths.label_sheet, {"a#0": "texte libre"})
+
+    cmd_import_labels(paths)
+
+    assert {(lab.element_id, lab.note) for lab in read_jsonl(paths.labels, HumanLabel)} == {
+        ("old#0", ""),
+        ("kept#0", "locuteur"),
+        ("a#0", ""),
+    }
+    assert "texte" not in paths.labels.read_text(encoding="utf-8")
+    assert capsys.readouterr().out == f"Imported 1 labels, 3 total -> {paths.labels}\n"
 
 
 def test_parse_label_rejects_unknown_values() -> None:

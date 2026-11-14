@@ -12,6 +12,7 @@ from typing import Any
 import pytest
 
 from evals.baseline_v1.jsonl import write_jsonl
+from evals.baseline_v1.labeling import committed_note
 from evals.baseline_v1.report import cluster_bootstrap_ci
 from evals.baseline_v1.schemas import ElementRecord, ExtractionRecord, HumanLabel, Label
 from evals.v2.compare import __main__ as compare_main
@@ -187,6 +188,14 @@ def test_a_misattributed_quote_is_a_contradicted_quote_noted_locuteur() -> None:
     ]
     stats = arm_stats(_arm("v2", [("tsa-00", [*quotes, person])], labels))
     assert stats.misattributed == 1 and stats.quotes_stated == 4
+
+
+def test_a_misattributed_quote_is_counted_from_an_imported_note() -> None:
+    quote = _el("tsa-00", "v2", "Citation", "quote")
+    note = committed_note("mauvais locuteur : X")  # what the import stores
+    assert note == "locuteur"
+    stats = arm_stats(_arm("v2", [("tsa-00", [quote])], [_lab(quote, "CONTRADICTED", note)]))
+    assert stats.misattributed == 1
 
 
 def test_an_incomplete_arm_has_no_statistic() -> None:

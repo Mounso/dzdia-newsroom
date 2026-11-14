@@ -7,6 +7,8 @@ points 6 to 8): `export-labels`, `import-labels` and `check-labels`.
   matcher's verdict never appear in the sheet. One function maps keys to elements over the whole
   population; the three steps use it, so `keys.jsonl` is only an audit copy.
 - The comparison's `labels.jsonl` is append-only and read with the latest label per element.
+  A label keeps from its note only the speaker marker `locuteur`: any other note text stays in
+  the local sheet.
 - The steps print counts and keys only, never an arm, an element id, a value or a label.
 """
 
@@ -21,7 +23,7 @@ from pathlib import Path
 from pydantic import BaseModel
 
 from evals.baseline_v1.jsonl import append_jsonl, latest_by, read_jsonl, write_jsonl
-from evals.baseline_v1.labeling import parse_label
+from evals.baseline_v1.labeling import SPEAKER_MARKER, committed_note, parse_label
 from evals.baseline_v1.matcher import normalize
 from evals.baseline_v1.schemas import ElementRecord, HumanLabel, Label, SampleItem
 from evals.v2.compare import CompareError
@@ -131,7 +133,7 @@ class SheetRow:
 
     key: str
     label: str  # raw cell; blank: pending
-    note: str  # stripped
+    note: str  # reduced to the speaker marker or "" (`committed_note`)
 
     @property
     def filled(self) -> bool:
@@ -175,7 +177,7 @@ def read_sheet(path: Path) -> list[SheetRow]:
                 SheetRow(
                     key=(row.get("key") or "").strip(),
                     label=row.get("label") or "",
-                    note=(row.get("note") or "").strip(),
+                    note=committed_note(row.get("note") or ""),
                 )
                 for row in reader
             ]
@@ -411,7 +413,7 @@ def run_checks(rows: Sequence[LabeledRow]) -> CheckResult:
     locuteur = [
         r
         for r in rows
-        if "locuteur" in r.label.note.casefold()
+        if SPEAKER_MARKER in r.label.note.casefold()
         and not (r.element.type == "quote" and r.label.label == "CONTRADICTED")
     ]
     return CheckResult(quotes, inconsistent, locuteur)

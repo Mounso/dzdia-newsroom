@@ -3,6 +3,9 @@
 Selected for labeling: every `not_found` element + a stable ~20 % audit sample of `found` ones.
 The audit sample is chosen by hashing the element_id, so it does not change when elements are
 added or the pipeline is re-run.
+
+An imported label keeps from its note only the speaker marker `locuteur`: any other note text
+stays in the local sheet.
 """
 
 import csv
@@ -14,6 +17,7 @@ from typing import get_args
 from evals.baseline_v1.schemas import ElementRecord, HumanLabel, Label
 
 AUDIT_RATE_PERCENT = 20
+SPEAKER_MARKER = "locuteur"
 _SHORTCUTS: dict[str, Label] = {"S": "SUPPORTED", "C": "CONTRADICTED", "N": "NOT_IN_SOURCE"}
 _COLUMNS = [
     "element_id", "item_id", "condition", "task", "type", "value", "context",
@@ -66,12 +70,22 @@ def parse_label(raw: str) -> Label:
     raise ValueError(f"Unknown label '{raw}': use S, C, N or {', '.join(get_args(Label))}")
 
 
+def committed_note(note: str) -> str:
+    """The note as stored in a labels file: `SPEAKER_MARKER` if the note contains it, else "".
+    Free text may quote the article or the model output, and the labels files are committed."""
+    return SPEAKER_MARKER if SPEAKER_MARKER in note.casefold() else ""
+
+
 def read_label_sheet(path: Path) -> list[HumanLabel]:
     """Return the rows that have a label; rows left blank are still pending."""
     with path.open(encoding="utf-8-sig", newline="") as f:
         rows = list(csv.DictReader(f, delimiter=";"))
     return [
-        HumanLabel(element_id=row["element_id"], label=parse_label(row["label"]), note=row["note"])
+        HumanLabel(
+            element_id=row["element_id"],
+            label=parse_label(row["label"]),
+            note=committed_note(row.get("note") or ""),
+        )
         for row in rows
         if row.get("label", "").strip()
     ]

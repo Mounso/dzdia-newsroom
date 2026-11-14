@@ -75,7 +75,7 @@ The labeler opens the reference text of the row's article (`evals/.data/baseline
 - Article text and raw model outputs are copyrighted or derived from copyrighted text: they stay in `evals/.data/` (gitignored and excluded from Docker builds).
 - The repository keeps only the sample, snapshot metadata and hashes, and later the human labels and the report.
 - Run and extraction records carry the model name, the prompt version, a timestamp and the latency.
-- **Element ids are derived from the content**, not from the position in the extractor output: `<run_id>#<type>:<hash>`, where the hash covers the type and the value (Unicode NFC, case folded, whitespace collapsed; accents kept). A repeat of the same value in one run gets a suffix `~2`, `~3`. A re-extraction that finds the same element gives it the same id, so its human label still applies; a changed element gets a new id and goes back to pending, never inheriting another element's label. The labels file holds only ids and verdicts, never model output.
+- **Element ids are derived from the content**, not from the position in the extractor output: `<run_id>#<type>:<hash>`, where the hash covers the type and the value (Unicode NFC, case folded, whitespace collapsed; accents kept). A repeat of the same value in one run gets a suffix `~2`, `~3`. A re-extraction that finds the same element gives it the same id, so its human label still applies; a changed element gets a new id and goes back to pending, never inheriting another element's label. The labels file holds only ids and verdicts, never model output: the import does not copy the labeler's notes, which can quote the article or the output, and keeps only the marker `locuteur` when a note contains it. The full notes stay in the local sheet.
 
 ## Status
 
@@ -86,20 +86,21 @@ The labeler opens the reference text of the row's article (`evals/.data/baseline
 | `extract` | Done on 2026-11-09: 144/144 with `gemini-3.1-pro-preview` (thinking `low`), no failure, 733 elements; 5 outputs state no element. Tokens: 69,681 input, 45,264 output, 96,597 thinking (about 1.85 $). The recorded latencies of this pass include the wait for a concurrency slot (fixed afterwards). |
 | `match` | Done on 2026-11-09: 600 `found`, 133 `not_found` (`url_only`: 195 / 93; `page_text`: 405 / 40). |
 | Labeling | Done on 2026-11-13 by Abdou: 252 elements (the 133 `not_found` and 119 `found` from the 20 % audit sample), 0 pending. Mechanical consistency checks (no LLM) flagged 20 rows; Abdou reviewed them himself and changed 13. |
-| `report` | Done on 2026-11-13: final, no "Provisional report" banner ([`report.md`](../../evals/datasets/baseline_v1/report.md)). |
+| Second reading | On 2026-11-14 Abdou read all 252 rows again, alone and with no LLM, and changed 29 labels: 13 from unsupported to supported, 7 from supported to unsupported, 9 between `C` and `N`. The same mechanical checks then flagged 11 rows; he read them again and kept them. The first sheet is kept locally. |
+| `report` | Rebuilt on 2026-11-14 from the second reading: final, no "Provisional report" banner ([`report.md`](../../evals/datasets/baseline_v1/report.md)). The report of 2026-11-13 is in the Git history. |
 
 ## Results
 
-On the 16 original articles (opaque duplicates excluded), both tasks together, 95 % CI from the cluster bootstrap:
+On the 16 original articles (opaque duplicates excluded), both tasks together, 95 % CI from the cluster bootstrap. These figures come from the second reading of the labels; the first reading gave 28 % [21–35 %] (72/258) for `url_only` and 5 % [3–8 %] (24/445) for `page_text`.
 
 | Condition | Outputs | Elements | Unsupported elements | Outputs with ≥ 1 unsupported |
 |---|---|---|---|---|
-| `url_only` (v1 as shipped) | 64 | 258 | **28 % [21–35 %]** (72/258) | 41 % [30–53 %] (26/64) |
-| `page_text` (same prompts, given the page text) | 64 | 445 | 5 % [3–8 %] (24/445) | 28 % [19–38 %] (18/64) |
+| `url_only` (v1 as shipped) | 64 | 258 | **29 % [21–36 %]** (74/258) | 42 % [30–56 %] (27/64) |
+| `page_text` (same prompts, given the page text) | 64 | 445 | 4 % [2–6 %] (16/445) | 20 % [14–27 %] (13/64) |
 
-- Not opening the link multiplies the share of unsupported elements by about 5. In `url_only`, generated **articles** reach 48 % [39–56 %] unsupported elements and 15 of 16 contain at least one; **quotes** are unsupported at 67 % [47–92 %].
-- The slug matters: through an opaque `?p=ID` URL, 70 % [46–88 %] of elements are unsupported, against 22 % [10–39 %] for the same four articles reached through their normal URL.
-- **These are lower bounds.** Unaudited `found` elements count as supported, and the audit found 86 % [68–100 %] of `url_only` `found` elements supported (30/35; 95 % for `page_text`). See the limitations below.
+- Not opening the link multiplies the share of unsupported elements by about 8. In `url_only`, generated **articles** reach 47 % [38–54 %] unsupported elements and 15 of 16 contain at least one; **quotes** are unsupported at 72 % [52–100 %].
+- The slug matters: through an opaque `?p=ID` URL, 70 % [46–88 %] of elements are unsupported, against 22 % [9–39 %] for the same four articles reached through their normal URL.
+- **These are lower bounds.** Unaudited `found` elements count as supported, and the audit found 74 % [54–93 %] of `url_only` `found` elements supported (26/35; 99 % for `page_text`). See the limitations below.
 
 ## Known limitations
 
@@ -107,9 +108,9 @@ On the 16 original articles (opaque duplicates excluded), both tasks together, 9
 - **French only.** No Arabic-language source was available; Arabic will be evaluated separately.
 - **Extractor recall.** Elements the extractor misses are invisible to the metrics. The human labeler checks the extracted list while labeling.
 - **Extractor choice.** The model under test cannot extract its own elements (self-evaluation bias). A lighter model tested on 20 runs found 76 % of distinct elements but only 2 of 7 quotes and 8 of 16 organizations, so it would underestimate hallucinations; it was rejected. The extractor, `gemini-3.1-pro-preview`, is from the same family as the model under test; it judges nothing (code and a human do), but the shared family can still affect which elements are listed ([ADR-0008](../adr/0008-baseline-extractor-model.md)).
-- **Matcher false positives make every rate a lower bound.** An element can be "found" in a different context than the one stated ("2027" is in the article, but the output says something else about it). Only the 20 % audit sample is labeled; the other `found` elements count as supported. The audit shows 86 % precision in `url_only` (5 of 35 unsupported) and 95 % in `page_text`, so the true `url_only` rate is above 28 %; extrapolating the audit would put it near 36 %, an estimate not used in the report. Labeling the 150 unaudited `url_only` `found` elements would remove the assumption.
+- **Matcher false positives make every rate a lower bound.** An element can be "found" in a different context than the one stated ("2027" is in the article, but the output says something else about it). Only the 20 % audit sample is labeled; the other `found` elements count as supported. The audit shows 74 % precision in `url_only` (9 of 35 unsupported) and 99 % in `page_text`, so the true `url_only` rate is above 29 %; extrapolating the audit would put it near 44 %, an estimate not used in the report. The [v2 comparison](v2-comparison.md#labels-and-report-2026-11-14) later labeled every element of the `page_text` article runs: 18 of the 182 `found` elements outside the audit were unsupported, and the rate went from a floor of 6 % (15/256) to 12.9 % [8.5–18.1 %] (33/256). Labeling the 150 unaudited `url_only` `found` elements would remove the assumption.
 - **Corpus scope.** The 16 articles are general Algerian news (politics, visas, economy, transport) from TSA and Algérie 360, not the positive cultural content Dzdia publishes. The mechanism measured (v1 never opens the link) does not depend on the topic, but the exact rate does: the model may know less about a local artist than about Schengen visas. The v2 evaluation set should come from the content the team will actually send.
-- **One labeler.** All labels come from one person, with no second labeler, so inter-annotator agreement is not measured. Mechanical checks caught one rule applied two ways (reworded quotes); all reworded quotes are now `C`.
+- **One labeler.** All labels come from one person, with no second labeler, so inter-annotator agreement is not measured. Mechanical checks caught one rule applied two ways (reworded quotes); all reworded quotes are now `C`. A second reading of all 252 rows by the same labeler one day later changed 29 labels: the two readings agree on 223 of 252 labels (88 %), and on 232 of 252 (92 %) for supported against unsupported. One reading is not stable element by element, although the `url_only` rate moved by one point. The second reading was not blind to the first.
 - **Provisional figures while labeling.** Until every pending element is labeled, the element and output rates are ranges, and the contradicted and per-type rates cover decided elements only ([B6](../reviews/2026-10-28-design-review.md#b6--output-level-rate-is-a-lower-bound-while-labels-are-pending)). Only a report without the "Provisional report" banner gives final numbers.
 - **Adjacent numbers.** Since [B7](../reviews/2026-10-28-design-review.md#b7--adjacent-numbers-merged), a year followed by a number reads as two numbers; "le 12 450 participants" still reads 12450, which only adds an element to label.
 

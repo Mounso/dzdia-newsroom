@@ -299,10 +299,11 @@ def test_the_export_refuses_to_overwrite_labels_not_imported(tmp_path: Path) -> 
     assert {r["key"]: r["label"] for r in _rows(paths.label_sheet)}[_key(V2_NAME)] == "S"
 
     import_labels(paths)
-    _fill(paths.label_sheet, {_key(V2_NAME): ("S", "relu")})  # the note changed: not imported
+    _fill(paths.label_sheet, {_key(V2_NAME): ("S", "locuteur")})  # the note changed: not imported
     with pytest.raises(CompareError, match="import-labels"):
         export_labels(paths)
-    _fill(paths.label_sheet, {_key(V2_NAME): ("supported", "")})  # same label, other spelling
+    _fill(paths.label_sheet, {_key(V2_NAME): ("supported", "relu")})  # same label, other spelling;
+    # free text without the speaker marker is never imported, so it changes nothing
     record = export_labels(paths)
 
     assert record.n_rows == 5  # the labeled row is not written again
@@ -359,14 +360,14 @@ def test_import_is_append_only_and_counts_changes(tmp_path: Path) -> None:
     unchanged = import_labels(paths)  # same sheet: nothing new
     assert (unchanged.appended, unchanged.changed) == (0, 0)
 
-    _fill(paths.label_sheet, {_key(V2_NAME): ("C", ""), _key(V2_DATE): ("N", "relu")})
+    _fill(paths.label_sheet, {_key(V2_NAME): ("C", ""), _key(V2_DATE): ("N", "Locuteur ?")})
     summary = import_labels(paths)
     assert (summary.appended, summary.changed, summary.labeled) == (2, 1, 2)
     # Appended in sheet order: the tsa-02 row first.
     assert [(lab.element_id, lab.label, lab.note) for lab in _labels(paths)] == [
         (V2_DATE.element_id, "NOT_IN_SOURCE", ""),
         (V2_NAME.element_id, "SUPPORTED", ""),
-        (V2_DATE.element_id, "NOT_IN_SOURCE", "relu"),
+        (V2_DATE.element_id, "NOT_IN_SOURCE", "locuteur"),
         (V2_NAME.element_id, "CONTRADICTED", ""),
     ]
 
@@ -375,6 +376,37 @@ def test_import_is_append_only_and_counts_changes(tmp_path: Path) -> None:
     blank = import_labels(paths)
     assert (blank.appended, blank.labeled, blank.pending) == (0, 2, 4)
     assert len(_labels(paths)) == 4
+
+
+def test_an_imported_note_keeps_only_the_speaker_marker(tmp_path: Path) -> None:
+    paths = _setup(tmp_path)
+    export_labels(paths)
+    _fill(
+        paths.label_sheet,
+        {
+            _key(V2_NAME): ("S", "mauvais locuteur : X"),
+            _key(PLAIN_QUOTE): ("C", "Mauvais LOCUTEUR : X"),
+            _key(V2_DATE): ("N", "the article says « le 4 mai »"),
+        },
+    )
+    first = import_labels(paths)
+    assert first.appended == 3
+    notes = {lab.element_id: lab.note for lab in _labels(paths)}
+    assert notes == {
+        V2_NAME.element_id: "locuteur",
+        PLAIN_QUOTE.element_id: "locuteur",
+        V2_DATE.element_id: "",
+    }
+    raw = paths.labels.read_text(encoding="utf-8")
+    assert "mauvais" not in raw.casefold() and "article says" not in raw
+
+    again = import_labels(paths)  # the same sheet, free text still in it: nothing new
+    assert (again.appended, again.changed) == (0, 0)
+    assert len(_labels(paths)) == 3
+
+    result, record = check_labels(paths)  # check 3 still sees the marker
+    assert [r.key for r in result.locuteur_notes] == [_key(V2_NAME)]
+    assert record.locuteur_notes == 1
 
 
 def test_import_needs_a_sheet(tmp_path: Path) -> None:

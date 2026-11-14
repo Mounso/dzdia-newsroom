@@ -107,6 +107,7 @@ Each export writes only the rows that have no label yet. It also writes the key 
 
 - The whole sheet is checked first. An unknown key, an invalid label or a key filled on two rows stops the import before anything is written, and the message names the keys.
 - `evals/datasets/v2_compare/labels.jsonl` is append-only: a label that changed is appended, and readers take the latest one per element. The file therefore shows how many labels were changed after a check. A blanked cell never removes a label.
+- A note is not copied into the labels file. The file is committed, and a free-text note can quote the article or the model output. The import keeps only the marker `locuteur` when the note contains it; the full notes stay in the local sheet.
 - The baseline's `labels.jsonl` is not touched.
 
 `check-labels` runs three checks fixed in advance (ADR-0013, point 7) on the labels of the sheet's rows, and lists the flagged rows by article and key:
@@ -156,7 +157,7 @@ Its fixed limits: an interval somewhat too narrow with 16 articles, one labeler,
 
 ## Results
 
-No rate yet: the elements are extracted and matched, not labeled.
+The comparison is complete: the result is in [Labels and report](#labels-and-report-2026-11-14) below. In short, the new prompt removes the unsupported elements, and the architecture adds no measurable gain on this metric. The earlier subsections record each step as it happened, before the labels.
 
 ### The run (2026-11-13)
 
@@ -191,3 +192,52 @@ One pass of `extract` with `gemini-3.1-pro-preview` (thinking `low`), the extrac
 ### The blind sheet (2026-11-13)
 
 First export: 603 rows, 17 to 82 per article. The labeling guide is frozen from this export; its hash is in `evals/datasets/v2_compare/exports.jsonl`.
+
+### Labels and report (2026-11-14)
+
+The generated report is [`report.md`](../../evals/datasets/v2_compare/report.md). All 603 rows of the blind sheet are labeled, by one person, with no pending row.
+
+| Arm | Unsupported elements | Without quotes | Contradicted | Articles with at least one | Elements | Median length |
+| --- | --- | --- | --- | --- | --- | --- |
+| `page_text` (v1 prompt, given the page text) | 12.9 % [8.5–18.1 %] (33/256) | 10.2 % [6.2–15.3 %] (25/244) | 2.7 % [0.7–5.9 %] (7/256) | 15 of 16 | 256 | 3,504.5 |
+| `plain_prompt` (new prompt, no architecture) | 0.0 % (0/227) | 0.0 % (0/227) | 0.0 % (0/227) | 0 of 16 | 227 | 1,455.5 |
+| `v2` (evidence ids, structured output, validator) | 2.6 % [0.0–6.3 %] (5/194) | 1.7 % [0.0–4.1 %] (3/178) | 2.1 % [0.0–5.7 %] (4/194) | 3 of 16 | 194 | 1,305.5 |
+
+| Difference of the unsupported rate | Estimate [95 % interval] |
+| --- | --- |
+| `v2 − page_text` (primary) | −10.3 points [−15.3; −5.8] |
+| `plain_prompt − page_text` (prompt and settings) | −12.9 points [−18.1; −8.5] |
+| `v2 − plain_prompt` (evidence ids, structured output, validator) | +2.6 points [0.0; 6.3] |
+
+**What the result says** (the wording was fixed in advance by ADR-0010, point 11):
+
+1. **v2 lowers the unsupported rate by 10.3 points [5.8; 15.3] on the article task**, against the v1 prompt given the same page text.
+2. **None of this gain is attributed to the architecture: the prompt did it.** The plain prompt alone, with no evidence id, no structured output and no validator, lowers the rate by 12.9 points and leaves no unsupported element in 16 articles. On this metric v2 is not better than the plain prompt: it has 5 unsupported elements where the plain prompt has none.
+3. **The two guards of ADR-0010, point 12, do not apply.** No v2 generation failed. Both new arms state more than two thirds of the elements of `page_text` (88.7 % and 75.8 %), in articles less than half as long.
+
+**Where the 5 unsupported elements of v2 come from:**
+
+- **4 come from 2 quotes that are not quotes.** In two articles the model took a sentence of the journalist's own narration, copied it word for word, and put it in a quote segment with a speaker. The code then printed it as that speaker's direct speech. The validator accepted it: it checks that the words are in the cited evidence, not that the source presents them as someone's words, nor who says them. Each case counts twice in the metric: the quote, and the speaker it is given to. This is the gap the independent review named (finding V-2).
+- **1 is a date attached to the wrong event.** The date is in the source, about something else. No check on ids or strings can see it.
+- **The guarantee on wording held.** The extractor found 16 quotes in the v2 articles, as many as the validator kept. None was labeled as reworded: 14 are supported and 2 are the cases above. In `page_text`, 8 of 12 quotes are unsupported.
+- **The plain prompt wrote no quote at all**, although its prompt neither asks for quotes nor forbids them. Its zero is partly the result of stating nothing in the riskiest category. The v2 format offers a quote segment, and the model used it 17 times (16 kept, 1 removed).
+- **A speaker guard is now an open decision.** ADR-0010, point 7, left it to the measured count: 2 of 16 kept quotes are misattributed.
+
+**`page_text` is now a rate, and it is twice its floor.** In the baseline, `found` elements outside the 20 % audit counted as supported, which gave 6 % (15/256) after the second reading of the labels. With every element labeled the rate is 12.9 % (33/256): 18 of the 182 `found` elements that the baseline had not labeled are unsupported (10 %), mostly places (11) and dates (4) that are in the source but used for a claim the source does not make.
+
+**Label checks and changes, all made before the report was run:**
+
+- `check-labels` ran three times. Check 2 listed 30 rows each time (same type and value in one article, different labels); the labeler read them again and kept every label. Check 3 listed one quote noted `locuteur` and labeled `N`; the labeler changed it to `C`. It is the only label of the comparison's file that changed, and it is a `page_text` row.
+- The labeler added `locuteur` to three notes after the first import: no note had the word, so the report would have counted no misattributed quote.
+- **Deviation from ADR-0010, point 6.** That point says the existing `page_text` labels are kept. The labeler read the whole baseline sheet again on 2026-11-14 ([baseline page](baseline-v1.md#status)) and changed 6 of the 74 labels this comparison reuses: 4 went from unsupported to supported, 2 from `C` to `N`. With the first reading, `page_text` would have 37 unsupported elements of 256 (14.5 %) instead of 33. The change makes the line harder to beat.
+- **Notes.** The labels file keeps from a note only the word `locuteur`. The notes written into the local file by the first import were reduced the same way before anything was committed; labels and their order were not touched.
+
+**Temperature.** The two new arms ran at temperature 0, and `page_text` with the model's defaults. The [temperature check](v2-tryout.md#temperature-check) found that 0 gives identical outputs on three repeats of two pages outside the sample, for both new arms. Each article was still generated once, and the model is a preview.
+
+**Limits of this result**, besides those listed in the report:
+
+- **Zero observed is not zero.** With no unsupported element, the bootstrap interval of `plain_prompt` is [0.0–0.0]: it cannot express uncertainty when nothing is observed. With 0 articles of 16, up to about 17 % of articles could still contain one (95 % bound, 1 − 0.05^(1/16)). The lower end of `v2 − plain_prompt` is 0.0 for the same reason.
+- **The gap between the two new arms rests on three articles** and on one failure mode. It does not show that the architecture makes articles worse in general; it shows that its quote check is incomplete, and that it brought no measurable gain here.
+- **Two labeling passes inside `page_text`.** Among the `found` elements of `page_text`, 1 of 41 is unsupported in the earlier labels (not blind) and 18 of 182 in the blind sheet. A gap this large comes about one time in ten by chance alone, so the earlier labels may be more lenient. If they are, the bias is in favor of `page_text`.
+- **Blinding is partial.** A v2 article prints quotes as `Speaker : « words »`, and the `page_text` articles are longer and written to be engaging: a row can give its arm away.
+- **Not measured here:** what the architecture is for besides this rate. v2 shows the sources of each sentence and enforces the wording of quotes by code; the plain prompt only asks. This comparison says nothing about readers' trust or about longer, harder sources.

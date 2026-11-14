@@ -26,6 +26,7 @@ from typing import Literal
 
 from dzdia_newsroom.tools.article import IssueKind
 from evals.baseline_v1.jsonl import latest_by, read_jsonl
+from evals.baseline_v1.labeling import SPEAKER_MARKER
 from evals.baseline_v1.report import RateCI, cluster_bootstrap_ci
 from evals.baseline_v1.schemas import ElementRecord, ExtractionRecord, HumanLabel, RunRecord
 from evals.v2.compare import CompareError
@@ -197,7 +198,7 @@ def _is_misattributed(element: ElementRecord, label: HumanLabel) -> bool:
     return (
         element.type == "quote"
         and label.label == "CONTRADICTED"
-        and "locuteur" in label.note.casefold()
+        and SPEAKER_MARKER in label.note.casefold()
     )
 
 
