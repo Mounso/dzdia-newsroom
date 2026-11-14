@@ -3,7 +3,7 @@
 - **Status:** Accepted
 - **Date:** 2026-10-27
 - **Deciders:** Abdou (author), with Claude as reviewer
-- **Amended by:** [ADR-0002](0002-algerie-360-replaces-el-watan.md) (point 2), [ADR-0003](0003-automated-reference-review.md) (points 2 and 3), [ADR-0010](0010-v2-comparison-protocol.md) (points 4 and 5, for the v2 comparison)
+- **Amended by:** [ADR-0002](0002-algerie-360-replaces-el-watan.md) (point 2), [ADR-0003](0003-automated-reference-review.md) (points 2 and 3), [ADR-0010](0010-v2-comparison-protocol.md) (points 4 and 5, for the v2 comparison), [ADR-0016](0016-baseline-reported-per-task.md) (point 5, step 3, and point 6: reporting per task, floors)
 
 ## Context
 

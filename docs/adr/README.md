@@ -29,7 +29,7 @@ An ADR that only changes part of an earlier one *amends* it: both stay accepted,
 
 | # | Title | Status | Date | Relations |
 |---|---|---|---|---|
-| 0001 | [Measurement protocol for the v1 hallucination baseline](0001-baseline-hallucination-protocol.md) | Accepted | 2026-10-27 | Amended by 0002, 0003, 0010 |
+| 0001 | [Measurement protocol for the v1 hallucination baseline](0001-baseline-hallucination-protocol.md) | Accepted | 2026-10-27 | Amended by 0002, 0003, 0010, 0016 |
 | 0002 | [Algérie 360 replaces El Watan in the baseline sample](0002-algerie-360-replaces-el-watan.md) | Accepted | 2026-10-27 | Amends 0001 |
 | 0003 | [Automated reference review, headlines included, paywalled articles excluded](0003-automated-reference-review.md) | Accepted | 2026-10-27 | Amends 0001 |
 | 0004 | [Runtime foundation: Telegram webhook, Postgres queue, worker and deployment](0004-runtime-foundation.md) | Accepted (except the HTTPS hostname) | 2026-10-27 | Extended by 0005, 0006, 0007 |
@@ -44,5 +44,6 @@ An ADR that only changes part of an earlier one *amends* it: both stay accepted,
 | 0013 | [The v2 comparison runs in its own command, with a blind sheet, its own labels file and intervals fixed in advance](0013-v2-comparison-harness.md) | Accepted | 2026-11-13 | Related to 0001, 0003, 0008, 0010 |
 | 0014 | [A quote is kept only when the source itself puts its words inside quotation marks](0014-quote-must-be-quoted-in-source.md) | Accepted | 2026-11-14 | Amends 0009, 0011, 0012; related to 0010, 0013 |
 | 0015 | [The published Dzdia articles are copied locally by a committed step, as a style reference only](0015-dzdia-corpus-local-copy.md) | Accepted | 2026-11-14 | Related to 0001, 0009, 0014 |
+| 0016 | [The v1 baseline is reported per task, with the article task fully labeled and every other rate printed as a floor](0016-baseline-reported-per-task.md) | Accepted | 2026-11-14 | Amends 0001; related to 0010, 0013 |
 
 > ADRs 0001-0006 were written in French and translated to English on 2026-10-28 with no change in substance; the French originals are in the git history (`docs/architecture_decisions.md`, commit 8e32200).
