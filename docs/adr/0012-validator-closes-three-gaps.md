@@ -4,6 +4,7 @@
 - **Date:** 2026-11-13
 - **Deciders:** Abdou (author), with Claude as reviewer
 - **Amends:** [ADR-0009](0009-v2-link-to-sourced-article-slice.md) (point 4: the list of errors and what happens after the retry)
+- **Amended by:** [ADR-0014](0014-quote-must-be-quoted-in-source.md) (point 4: a third quote error; the first consequence: the guarantee sentence)
 - **Related:** [ADR-0011](0011-failed-quote-is-removed.md) (a failed quote is removed), [ADR-0010](0010-v2-comparison-protocol.md) (the eval that reads the validator counters)
 
 ## Context

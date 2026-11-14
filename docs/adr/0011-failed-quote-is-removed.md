@@ -4,6 +4,7 @@
 - **Date:** 2026-11-13
 - **Deciders:** Abdou (author), with Claude as reviewer
 - **Amends:** [ADR-0009](0009-v2-link-to-sourced-article-slice.md) (points 3 and 4, and the second consequence)
+- **Amended by:** [ADR-0014](0014-quote-must-be-quoted-in-source.md) (point 3: one wording of the removed-quote count for every cause)
 - **Related:** [independent review of 2026-11-13](../reviews/2026-11-13-independent-review.md), finding V-1
 
 ## Context
