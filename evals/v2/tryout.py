@@ -1,6 +1,7 @@
 """Try the prompts on pages outside the baseline sample before freezing them (K3a, ADR-0010
-point 4). Both prompts were frozen on 2026-11-13 after round 1; their fingerprints are pinned in
-`evals/v2/arms.py`. Run `python -m evals.v2.tryout <step> --help`.
+point 4). Both prompts (`v2-article-1`, `v1-plain-1`) were frozen on 2026-11-13 after round 1;
+`v2-article-2` (ADR-0014) was tried the same way and frozen on 2026-11-14. The fingerprints are
+pinned in `evals/v2/arms.py`. Run `python -m evals.v2.tryout <step> --help`.
 
 Steps:
 - `select`: pick the tryout pages from the RSS feeds (3 spike pages given with `--include`, plus
@@ -759,7 +760,7 @@ def print_counters(
 ) -> None:
     print("page       | v2: outcome retried issues@1 | issues@2 kept removed sentences chars")
     print("           | plain: chars error")
-    totals = {"retried": 0, "kept": 0, "removed": 0, "failed": 0}
+    totals = {"retried": 0, "kept": 0, "removed": 0, "failed": 0, "not_quoted": 0, "pages": 0}
     for page_id in page_ids:
         r = v2.get(page_id)
         if r is None:
@@ -777,6 +778,10 @@ def print_counters(
             totals["kept"] += r.kept_quotes or 0
             totals["removed"] += r.removed_quotes or 0
             totals["failed"] += r.outcome == "failed"
+            # ADR-0014, point 7: the new quote rule at the first attempt
+            not_quoted = r.attempts[0].issues.get("quote_not_quoted_in_source", 0)
+            totals["not_quoted"] += not_quoted
+            totals["pages"] += not_quoted > 0
         p = plain.get(page_id)
         plain_cell = (
             "no record" if p is None else f"{p.n_output_chars} {p.error[:80] if p.error else '-'}"
@@ -785,7 +790,8 @@ def print_counters(
         print(f"{'':<10} | plain: {plain_cell}")
     print(
         f"Totals v2: {totals['failed']} failed, {totals['retried']} retried, "
-        f"{totals['kept']} kept quotes, {totals['removed']} removed quotes"
+        f"{totals['kept']} kept quotes, {totals['removed']} removed quotes, "
+        f"{totals['not_quoted']} quote_not_quoted_in_source at attempt 1 on {totals['pages']} pages"
     )
 
 

@@ -108,7 +108,7 @@ def _pack(paragraph: str, max_chars: int) -> list[str]:
 
 def _sentence_ends(paragraph: str) -> Iterator[int]:
     """Offsets just after each sentence end that lies outside quotation marks."""
-    depth = _quote_depths(paragraph)
+    depth = quote_depths(paragraph)
     for match in _SENTENCE_END.finditer(paragraph):
         end = match.end()
         if depth[end] > 0:
@@ -124,8 +124,9 @@ def _is_abbreviation(word: str) -> bool:
     return word.lower() in _ABBREVIATIONS or (len(word) == 1 and word.isupper())
 
 
-def _quote_depths(text: str) -> list[int]:
-    """Quotation depth before each offset (index i: depth between text[i-1] and text[i])."""
+def quote_depths(text: str) -> list[int]:
+    """Quotation depth before each offset (index i: depth between text[i-1] and text[i]).
+    The quote guard of `tools/article.py` uses it on one evidence item (ADR-0014, point 2)."""
     depths = [0]
     depth = 0
     inside_ascii = False

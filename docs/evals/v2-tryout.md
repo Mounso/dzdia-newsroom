@@ -8,7 +8,7 @@ The tryout is not a measurement. It uses 6 pages and mechanical counters only: n
 
 | Arm | Prompt | Pipeline |
 | --- | --- | --- |
-| `v2` | `v2-article-1` and the retry message (`src/dzdia_newsroom/tools/article.py`) | Evidence ids, structured output, validation, one retry, removal of failed quotes ([ADR-0009](../adr/0009-v2-link-to-sourced-article-slice.md), [ADR-0011](../adr/0011-failed-quote-is-removed.md), [ADR-0012](../adr/0012-validator-closes-three-gaps.md)) |
+| `v2` | `v2-article-1`, then `v2-article-2` on 2026-11-14, each with its retry message (`src/dzdia_newsroom/tools/article.py`) | Evidence ids, structured output, validation, one retry, removal of failed quotes ([ADR-0009](../adr/0009-v2-link-to-sourced-article-slice.md), [ADR-0011](../adr/0011-failed-quote-is-removed.md), [ADR-0012](../adr/0012-validator-closes-three-gaps.md)); from `v2-article-2`, the quote guard of [ADR-0014](../adr/0014-quote-must-be-quoted-in-source.md) |
 | `plain` | `v1-plain-1` (`evals/v2/arms.py`) | Free text out, no evidence ids, no validator: the ablation arm of ADR-0010 |
 
 Both arms use the same model, temperature 0, the same editorial instructions and the same input text, capped once at 30,000 characters. The two arm functions in `evals/v2/arms.py` take one capped text and return one output; the eval on the frozen sample reuses them unchanged.
@@ -114,9 +114,54 @@ Round 1, 2026-11-13, `gemini-3.1-flash-lite-preview`, temperature 0. Prompt fing
 
 Verdict: **freeze**, with no revision round.
 
+### `v2-article-2` (2026-11-14)
+
+[ADR-0014](../adr/0014-quote-must-be-quoted-in-source.md) changes what the model reads: the quote rule of the prompt, two schema descriptions and the retry message. The prompt got a new version name, since `v2-article-1` had run on the sample, and it was tried on the same six pages with the same freeze rule before its fingerprint was pinned.
+
+What changed in the prompt:
+
+- A `quote` segment is only for words that the source itself puts inside quotation marks; reported speech without quotation marks is written as a `sentence`. This is the rule the validator now checks.
+- The speaker is described as the person or organization the source attributes the words to, and the model is told not to use a `quote` segment when the source does not say clearly who speaks. This instruction goes beyond point 5 of ADR-0014, which only names the rule on quotation marks. No code checks it.
+
+```bash
+uv run python -m evals.v2.tryout run --arms v2
+uv run python -m evals.v2.tryout counters
+```
+
+One round, `gemini-3.1-flash-lite-preview`, temperature 0, fingerprint `a2147a4a27d9`. Six v2 runs, no technical error. The plain arm was not run again: its prompt did not change, and the lengths below are those of round 1.
+
+| Page | v2 outcome | Retry | Issues, attempt 1 | Quotes kept | Quotes removed | v2 chars | Plain chars (round 1) |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| `tryout-00` | ok | no | none | 1 | 0 | 1,123 | 1,593 |
+| `tryout-01` | ok | no | none | 1 | 0 | 1,087 | 1,105 |
+| `tryout-02` | ok | no | none | 0 | 0 | 974 | 1,305 |
+| `tryout-03` | ok | no | none | 5 | 0 | 1,439 | 1,426 |
+| `tryout-04` | ok | no | none | 0 | 0 | 1,959 | 2,291 |
+| `tryout-05` | ok | no | none | 0 | 0 | 1,117 | 1,663 |
+
+| Condition | Observed | Result |
+| --- | --- | --- |
+| No failed v2 generation | 0 failed | met |
+| `quotation_marks` at the first attempt on at most one page | 0 pages | met |
+| Retry used on at most two pages | 0 pages | met |
+| At most one quote removed in total | 0 removed | met |
+| Median v2 length at least two thirds of the plain one | 1,120 against 1,509.5 (0.74) | met |
+
+`quote_not_quoted_in_source` at the first attempt: 0 issues on 0 pages.
+
+Verdict: **freeze**, with no revision round.
+
+What this round shows, and what it does not:
+
+- **The new rule never fired.** The model wrote 7 quotes and the validator accepted all of them at the first attempt, so each one lies inside quotation marks in its evidence item. With `v2-article-1`, 1 of the 5 quotes kept on these pages lay outside quotation marks (ADR-0014, Context).
+- **The retry line of the new rule has not run against the real model.** No draft was refused, so neither the new retry message nor the removal of a quote for this cause was exercised outside the tests.
+- **The prompt did not make the model avoid quotes.** It wrote 7 where `v2-article-1` kept 5, on the same three pages that contain quoted passages.
+- **Nothing here says the 7 quotes are faithful or rightly attributed.** Nothing is labeled, and the speaker is still checked by no code.
+- **Six pages, three of them without any quoted passage.** The sample of the comparison is not generated again with this prompt: the published rates stay those of `v2-article-1` ([comparison](v2-comparison.md#guard-replay-2026-11-14)).
+
 ## Freeze
 
-`v2-article-1` and `v1-plain-1` are frozen as they ran in round 1. Their fingerprints are pinned in `evals/v2/arms.py`, and `tests/evals/test_v2_arms.py` fails when either changes.
+`v2-article-1` and `v1-plain-1` were frozen as they ran in round 1, and the comparison ran with them. `v2-article-2` was frozen on 2026-11-14 as it ran above; it is the prompt the code now uses. The fingerprints of the current prompts are pinned in `evals/v2/arms.py`, and `tests/evals/test_v2_arms.py` fails when either changes. The records of the comparison keep the version and the fingerprint they were generated with (`v2-article-1`, `b9e5672bfd4d`).
 
 The v2 fingerprint covers everything the model reads besides the evidence: the prompt text, the JSON schema of the draft with its field descriptions, and every line of the retry message. The plain fingerprint covers the prompt text. To change a frozen prompt: give it a new version, run the tryout again, then update the pin. A prompt changed after the eval run is a new arm, and both are reported (ADR-0010, point 4).
 

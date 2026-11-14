@@ -203,10 +203,12 @@ async def run_v2(llm: StructuredGenerator, text: str) -> V2Output:
 # Every output records the fingerprint of the prompt text it was generated with, so outputs of
 # different prompt texts under one version name can be told apart.
 
-# Frozen on 2026-11-13 after the tryout (ADR-0010, point 4; `docs/evals/v2-tryout.md`). A change
-# of what the model reads (prompt, schema descriptions, retry message) needs a new prompt
-# version, a new pin and a new tryout.
-V2_PROMPT_FINGERPRINT = "b9e5672bfd4df0fddd15534c0c539ba25f1af9029b6b522c38f67f6034738de6"
+# Frozen after a tryout (ADR-0010, point 4; `docs/evals/v2-tryout.md`). A change of what the
+# model reads (prompt, schema descriptions, retry message) needs a new prompt version, a new pin
+# and a new tryout.
+# `v2-article-2`, frozen on 2026-11-14 (ADR-0014, point 7). The records of the comparison carry
+# the fingerprint of `v2-article-1`, frozen on 2026-11-13: b9e5672bfd4d…
+V2_PROMPT_FINGERPRINT = "a2147a4a27d9c774223c3d201122ae4188bf6544b317f563d5c750c6f535d89e"
 PLAIN_PROMPT_FINGERPRINT = "5026941ef6b3613555b545cb171134451dd373bec7936809edf398e94c62df7b"
 
 # One issue per kind, plus a title QUOTATION_MARKS issue: every branch of the retry message.

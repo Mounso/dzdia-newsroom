@@ -24,7 +24,6 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Literal
 
-from dzdia_newsroom.tools.article import IssueKind
 from evals.baseline_v1.jsonl import latest_by, read_jsonl
 from evals.baseline_v1.labeling import SPEAKER_MARKER
 from evals.baseline_v1.report import RateCI, cluster_bootstrap_ci
@@ -56,6 +55,18 @@ DIFFERENCES: tuple[tuple[Arm, Arm], ...] = (
     ("v2", "page_text"),
     ("plain_prompt", "page_text"),
     ("v2", "plain_prompt"),
+)
+# The issue kinds of `v2-article-1`, the prompt of the comparison's records, in their order then.
+# The report describes those records: a kind added by a later prompt version gets no row
+# (ADR-0014, point 5).
+V2_ARTICLE_1_KINDS: tuple[str, ...] = (
+    "unparsable",
+    "unknown_id",
+    "no_id",
+    "quote_not_in_evidence",
+    "quote_unknown_id",
+    "quotation_marks",
+    "empty",
 )
 
 
@@ -568,7 +579,7 @@ def _differences(data: ReportData, diffs: Mapping[tuple[Arm, Arm], PairedDiff | 
 
 
 def _validator(counters: ValidatorCounters) -> list[str]:
-    kinds = [k.value for k in IssueKind]
+    kinds = list(V2_ARTICLE_1_KINDS)
     kinds += sorted(set(counters.first_attempt_issues) - set(kinds))
     lines = [
         "## Validator counters of v2",
@@ -670,7 +681,8 @@ def _settings(settings: Mapping[str, float | str]) -> str:
     return ", ".join(f"{k}={v}" for k, v in sorted(settings.items())) or "none"
 
 
-def _by_run(elements: Iterable[ElementRecord]) -> dict[str, list[ElementRecord]]:
+def elements_by_run(elements: Iterable[ElementRecord]) -> dict[str, list[ElementRecord]]:
+    """Elements grouped by run id, in file order. Also used by the `guard-replay` step."""
     by_run: dict[str, list[ElementRecord]] = {}
     for e in elements:
         by_run.setdefault(e.run_id, []).append(e)
@@ -685,7 +697,7 @@ def _load_page_text(
     baseline = paths.baseline
     runs = latest_by(read_jsonl(baseline.runs, RunRecord), lambda r: r.run_id)
     extractions = latest_by(read_jsonl(baseline.extractions, ExtractionRecord), lambda x: x.run_id)
-    elements = _by_run(read_jsonl(baseline.elements, ElementRecord))
+    elements = elements_by_run(read_jsonl(baseline.elements, ElementRecord))
     outputs: list[ArmOutput] = []
     errors = 0
     models: set[str] = set()
@@ -804,7 +816,7 @@ def load_report_data(paths: ComparePaths) -> ReportData:
 
     runs = latest_by(read_jsonl(paths.runs, CompareRun), lambda r: r.run_id)
     extractions = latest_by(read_jsonl(paths.extractions, ExtractionRecord), lambda x: x.run_id)
-    elements = _by_run(read_jsonl(paths.elements, ElementRecord))
+    elements = elements_by_run(read_jsonl(paths.elements, ElementRecord))
     new_arms = {
         condition: _load_new_arm(condition, item_ids, runs, extractions, elements, compare_labels)
         for condition in ("plain_prompt", "v2")

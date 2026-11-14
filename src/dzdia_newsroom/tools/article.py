@@ -1,8 +1,10 @@
-"""Sourced article generation (ADR-0009 points 2 to 4, amended by ADR-0011 and ADR-0012).
+"""Sourced article generation (ADR-0009 points 2 to 4, amended by ADR-0011, ADR-0012 and
+ADR-0014).
 
 The model writes a structured draft where every sentence cites evidence ids and every quote
-names the one evidence item it is copied from. Code checks the draft, asks once more with the
-list of errors, then removes quotes that still fail and fails the job on anything else.
+names the one evidence item it is copied from. A quote is kept only when that item itself puts
+its words inside quotation marks (ADR-0014). Code checks the draft, asks once more with the list
+of errors, then removes quotes that still fail and fails the job on anything else.
 
 The docstrings of `find_issues` and `generate_article` are their specification, with the tests
 in `tests/tools/test_article_generation.py`.
@@ -19,13 +21,15 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 from dzdia_newsroom.llm import StructuredGenerator, StructuredOutputError, Usage
-from dzdia_newsroom.tools.evidence import EvidenceSet
+from dzdia_newsroom.tools.evidence import EvidenceSet, quote_depths
 
 logger = logging.getLogger(__name__)
 
-# Frozen on 2026-11-13 after the tryout (ADR-0010, point 4). Its fingerprint is pinned in
+# `v2-article-2` adds the quote rule of ADR-0014 (prompt, schema descriptions, retry message);
+# frozen on 2026-11-14 after its tryout. `v2-article-1` is the prompt of the published
+# comparison (frozen 2026-11-13, ADR-0010, point 4). The fingerprint is pinned in
 # `evals/v2/arms.py` and checked by `tests/evals/test_v2_arms.py`.
-PROMPT_VERSION = "v2-article-1"
+PROMPT_VERSION = "v2-article-2"
 
 # --- schema ----------------------------------------------------------------------------------
 # A plain union, not a pydantic discriminated union: the SDK rejects the `oneOf` that a
@@ -41,8 +45,15 @@ class SentenceSegment(BaseModel):
 
 class QuoteSegment(BaseModel):
     kind: Literal["quote"]
-    speaker: str = Field(description="Who says the words.")
-    text: str = Field(description="Words copied exactly from one evidence item, no quotes.")
+    speaker: str = Field(
+        description="The person or organization the source attributes the words to."
+    )
+    text: str = Field(
+        description=(
+            "Words that the evidence item itself puts inside quotation marks, copied exactly, "
+            "without the marks."
+        )
+    )
     evidence_id: str = Field(description="Id of the evidence item the words come from.")
 
 
@@ -79,9 +90,12 @@ Format de la réponse :
 identifiants (E1, E2…) des preuves qui la soutiennent : au moins un, seulement des \
 identifiants donnés ci-dessous.
 - Un segment "quote" est une citation directe : text est recopié mot pour mot d'une seule \
-preuve, indiquée dans evidence_id, et speaker est la personne qui parle. N'écris pas les \
-guillemets : le code les ajoute, avec le nom de la personne. N'annonce donc pas la citation \
-dans la phrase précédente.
+preuve, indiquée dans evidence_id, et speaker est la personne ou l'organisation à qui la \
+source attribue ces mots. N'utilise ce segment que pour des mots que la source met elle-même \
+entre guillemets. Des propos rapportés sans guillemets (« il a expliqué que… ») s'écrivent \
+dans un segment "sentence". Si la source ne dit pas clairement qui parle, n'utilise pas de \
+segment "quote". N'écris pas les guillemets : le code les ajoute, avec le nom de la personne. \
+N'annonce donc pas la citation dans la phrase précédente.
 - N'écris jamais de guillemets dans un segment "sentence".
 - Le titre ne cite aucune preuve et ne contient pas de guillemets."""
 
@@ -106,14 +120,21 @@ class IssueKind(StrEnum):
     NO_ID = "no_id"  # a sentence that cites nothing
     QUOTE_NOT_IN_EVIDENCE = "quote_not_in_evidence"  # see `check_quote`
     QUOTE_UNKNOWN_ID = "quote_unknown_id"  # a quote citing an id that is not in the evidence set
+    # a quote whose passage is not inside quotation marks in its evidence item (ADR-0014); see
+    # `quoted_passage`
+    QUOTE_NOT_QUOTED_IN_SOURCE = "quote_not_quoted_in_source"
     QUOTATION_MARKS = "quotation_marks"  # quotation marks in a sentence or in the title
     EMPTY = "empty"  # a draft with no segment whose text is non-blank (ADR-0012, point 3)
 
 
-# Issues of these kinds remove the quote after the retry (ADR-0011, ADR-0012); any other kind
-# left after the retry fails the generation.
+# Issues of these kinds remove the quote after the retry (ADR-0011, ADR-0012, ADR-0014): every
+# quote error. Any other kind left after the retry fails the generation.
 REMOVABLE_KINDS: frozenset[IssueKind] = frozenset(
-    {IssueKind.QUOTE_NOT_IN_EVIDENCE, IssueKind.QUOTE_UNKNOWN_ID}
+    {
+        IssueKind.QUOTE_NOT_IN_EVIDENCE,
+        IssueKind.QUOTE_UNKNOWN_ID,
+        IssueKind.QUOTE_NOT_QUOTED_IN_SOURCE,
+    }
 )
 
 
@@ -136,13 +157,14 @@ def has_quotation_marks(text: str) -> bool:
 
 def retry_feedback(issues: list[Issue]) -> str:
     """The message appended to the prompt for the single retry (ADR-0009 point 4, ADR-0011
-    point 2). The model does not see its previous answer, so each error quotes the text."""
+    point 2, ADR-0014 point 4). The model does not see its previous answer, so each error quotes
+    the text."""
     lines = ["Ta réponse précédente a été refusée pour ces raisons :"]
     for issue in issues:
         lines.append(f"- {_describe_issue(issue)}")
     lines.append(
         "Écris l'article à nouveau en corrigeant ces erreurs. Pour une citation refusée, soit "
-        "tu recopies les mots exactement depuis une preuve qui existe et tu cites son "
+        "tu recopies exactement des mots que la preuve met entre guillemets et tu cites son "
         'identifiant, soit tu réécris le fait dans un segment "sentence" avec les identifiants '
         "de ses preuves."
     )
@@ -164,6 +186,11 @@ def _describe_issue(issue: Issue) -> str:
             )
         case IssueKind.QUOTE_UNKNOWN_ID:
             return f"la citation « {issue.text} » cite la preuve {issue.detail}, qui n'existe pas."
+        case IssueKind.QUOTE_NOT_QUOTED_IN_SOURCE:
+            return (
+                f"la citation « {issue.text} » n'est pas entre guillemets dans la preuve "
+                f"{issue.detail} : la source ne la donne pas comme des paroles exactes."
+            )
         case IssueKind.QUOTATION_MARKS if issue.paragraph is None:
             return (
                 f"le titre « {issue.text} » contient des guillemets : le titre n'en contient "
@@ -178,7 +205,7 @@ def _describe_issue(issue: Issue) -> str:
             return "l'article ne contenait aucun texte."
 
 
-# --- quote check (ADR-0009, point 3) ---------------------------------------------------------
+# --- quote check (ADR-0009, point 3; ADR-0014) -----------------------------------------------
 
 _FOLD = str.maketrans(
     {"’": "'", "‘": "'", "ʼ": "'", "«": '"', "»": '"', "“": '"', "”": '"', "„": '"'}
@@ -206,29 +233,67 @@ def _normalize(text: str) -> tuple[str, list[int]]:
     return "".join(chars), offsets
 
 
+def _occurrences(quote: str, evidence_text: str) -> tuple[str, list[tuple[int, int]]]:
+    """`unicodedata.normalize("NFC", evidence_text)` and the `(start, end)` offsets in it of
+    every occurrence of the quote's passage, in order, overlapping ones included.
+
+    An occurrence is an exact substring after `_normalize` on both sides; quotation marks the
+    model put around the quote are ignored. Shared by `check_quote` and `quoted_passage`."""
+    source = unicodedata.normalize("NFC", evidence_text)
+    needle, _ = _normalize(quote.strip(_OUTER_QUOTES))
+    if not needle:
+        return source, []
+    haystack, offsets = _normalize(evidence_text)
+    spans: list[tuple[int, int]] = []
+    start = haystack.find(needle)
+    while start >= 0:
+        spans.append((offsets[start], offsets[start + len(needle) - 1] + 1))
+        start = haystack.find(needle, start + 1)
+    return source, spans
+
+
 def check_quote(quote: str, evidence_text: str) -> str | None:
     """The passage of `evidence_text` that `quote` reproduces, or None.
 
     Exact substring after `_normalize` on both sides: case, accents and punctuation count, and
     there is no ellipsis support (ADR-0009, point 3). Quotation marks the model put around the
-    quote are ignored. The passage is returned as written in the source (NFC), so the article
-    shows the source's own typography (choice p4)."""
-    needle, _ = _normalize(quote.strip(_OUTER_QUOTES))
-    if not needle:
+    quote are ignored, and quotation marks in the source are not considered: this is the first
+    occurrence. The passage is returned as written in the source (NFC), so the article shows the
+    source's own typography (choice p4)."""
+    source, spans = _occurrences(quote, evidence_text)
+    if not spans:
         return None
-    haystack, offsets = _normalize(evidence_text)
-    start = haystack.find(needle)
-    if start < 0:
+    start, end = spans[0]
+    return source[start:end]
+
+
+def quoted_passage(quote: str, evidence_text: str) -> str | None:
+    """The first occurrence of the quote's passage (the matching of `check_quote`) that lies
+    entirely inside quotation marks in `evidence_text`, as written in the source (NFC), or None
+    (ADR-0014, points 1 and 2).
+
+    The quotation depth is `quote_depths` of the NFC text of this evidence item alone. An
+    occurrence `source[a:b]` is inside quotation marks when the depth is above zero at every
+    index from `a` to `b` included: before its first character, after its last one and
+    everywhere in between, so a passage joining two quoted spans across unquoted words is
+    refused. Every occurrence is tried in order, overlapping ones included. A quotation left
+    open at the end of the item counts as open."""
+    source, spans = _occurrences(quote, evidence_text)
+    if not spans:
         return None
-    source = unicodedata.normalize("NFC", evidence_text)
-    return source[offsets[start] : offsets[start + len(needle) - 1] + 1]
+    depths = quote_depths(source)
+    for start, end in spans:
+        if all(depths[index] > 0 for index in range(start, end + 1)):
+            return source[start:end]
+    return None
 
 
 def remove_failed_quotes(draft: ArticleDraft, issues: list[Issue]) -> tuple[ArticleDraft, int]:
-    """Remove every quote flagged with a kind in `REMOVABLE_KINDS` (QUOTE_NOT_IN_EVIDENCE or
-    QUOTE_UNKNOWN_ID), then every paragraph left empty (ADR-0011 point 1, ADR-0012). Returns the
-    new draft and the number of quotes removed. Issues of other kinds remove nothing. An article
-    left with no paragraph is returned as is: failing the job is the caller's decision."""
+    """Remove every quote flagged with a kind in `REMOVABLE_KINDS` (QUOTE_NOT_IN_EVIDENCE,
+    QUOTE_UNKNOWN_ID or QUOTE_NOT_QUOTED_IN_SOURCE), then every paragraph left empty (ADR-0011
+    point 1, ADR-0012, ADR-0014). Returns the new draft and the number of quotes removed, every
+    cause together. Issues of other kinds remove nothing. An article left with no paragraph is
+    returned as is: failing the job is the caller's decision."""
     failed = {(issue.paragraph, issue.segment) for issue in issues if issue.kind in REMOVABLE_KINDS}
     paragraphs: list[Paragraph] = []
     removed = 0
@@ -252,8 +317,10 @@ def render_text(article: ArticleDraft, evidence: EvidenceSet) -> str:
     evidence markers. This is what the v2 eval's extractor reads (ADR-0010, point 5); the
     Telegram rendering with `[n]` markers and the sources message comes with step 6.
 
-    Quotes render as `<speaker> : « <passage> »` (choice 3a), with the source's passage. The
-    article must have been validated: an unverifiable quote raises ValueError."""
+    Quotes render as `<speaker> : « <passage> »` (choice 3a), with the source's passage: the
+    occurrence inside quotation marks that `quoted_passage` returns (ADR-0014, point 2). The
+    article must have been validated: a quote that is not found inside quotation marks in its
+    evidence item raises ValueError."""
     blocks = [article.title.strip()]
     for paragraph in article.paragraphs:
         parts: list[str] = []
@@ -262,7 +329,7 @@ def render_text(article: ArticleDraft, evidence: EvidenceSet) -> str:
                 parts.append(segment.text.strip())
                 continue
             item = evidence.get(segment.evidence_id)
-            passage = check_quote(segment.text, item.text) if item else None
+            passage = quoted_passage(segment.text, item.text) if item else None
             if passage is None:
                 raise ValueError(f"unverified quote in a validated article: {segment.text!r}")
             parts.append(f"{segment.speaker.strip()} : « {passage} »")
@@ -286,8 +353,8 @@ class Attempt:
 
 @dataclass(frozen=True)
 class ArticleResult:
-    # validated: known ids, every sentence cited, every quote checked, no quotation mark outside
-    # quote segments
+    # validated: known ids, every sentence cited, every quote found inside quotation marks in
+    # its evidence item (ADR-0014), no quotation mark outside quote segments
     article: ArticleDraft
     attempts: tuple[Attempt, ...]  # one or two; the eval's validator counters read them
     removed_quotes: int
@@ -305,7 +372,7 @@ class GenerationFailedError(Exception):
 
 
 def find_issues(draft: ArticleDraft, evidence: EvidenceSet) -> list[Issue]:
-    """Every problem of `draft` (ADR-0009 point 4, ADR-0011, ADR-0012).
+    """Every problem of `draft` (ADR-0009 point 4, ADR-0011, ADR-0012, ADR-0014).
 
     Title:
     - The title contains a quotation mark (`has_quotation_marks`): QUOTATION_MARKS, with
@@ -327,11 +394,14 @@ def find_issues(draft: ArticleDraft, evidence: EvidenceSet) -> list[Issue]:
     - Its text contains a quotation mark (`has_quotation_marks`; apostrophes do not count):
       QUOTATION_MARKS.
 
-    Quote segment (at most one issue per quote):
+    Quote segment (at most one issue per quote, the first that applies in this order):
     - Its `evidence_id` is not in `evidence`: QUOTE_UNKNOWN_ID, `detail` set to that id.
     - Otherwise, `check_quote` does not find its text in that evidence item:
       QUOTE_NOT_IN_EVIDENCE, `detail` set to the evidence id.
-    - Its `speaker` and `text` are not checked for quotation marks.
+    - Otherwise, no occurrence of its text lies inside quotation marks in that evidence item
+      (`quoted_passage` is None): QUOTE_NOT_QUOTED_IN_SOURCE, `detail` set to the evidence id.
+    - Its `speaker` and `text` are not checked for quotation marks, and the speaker is not
+      checked at all.
 
     Every segment issue carries the 0-based `paragraph` and `segment` positions and the
     segment's `text`.
@@ -381,12 +451,15 @@ def _sentence_problems(
 
 
 def _quote_problems(quote: QuoteSegment, evidence: EvidenceSet) -> list[tuple[IssueKind, str]]:
-    """The problem of one quote as (kind, detail), at most one."""
+    """The problem of one quote as (kind, detail), at most one, in the order `find_issues`
+    gives."""
     item = evidence.get(quote.evidence_id)
     if item is None:
         return [(IssueKind.QUOTE_UNKNOWN_ID, quote.evidence_id)]
     if check_quote(quote.text, item.text) is None:
         return [(IssueKind.QUOTE_NOT_IN_EVIDENCE, quote.evidence_id)]
+    if quoted_passage(quote.text, item.text) is None:
+        return [(IssueKind.QUOTE_NOT_QUOTED_IN_SOURCE, quote.evidence_id)]
     return []
 
 

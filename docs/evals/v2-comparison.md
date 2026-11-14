@@ -32,8 +32,9 @@ flowchart LR
 | `run` | Done on 2026-11-13 | Runs `v2` then `plain_prompt` on each of the 16 articles. |
 | `extract`, `match` | Done on 2026-11-13 | The baseline's extractor and matcher, on the plain output or the rendered v2 text. |
 | `export-labels` | Done on 2026-11-13 | The blind sheet. |
-| `import-labels`, `check-labels` | Labeling under way | The import of the sheet into a labels file of its own, and three mechanical checks. |
-| `report` | Written; counts only until every label is in | Rates per arm, paired differences with their intervals, guards, and the conclusion chosen by code. |
+| `import-labels`, `check-labels` | Done on 2026-11-14 | The import of the sheet into a labels file of its own, and three mechanical checks. |
+| `report` | Done on 2026-11-14 | Rates per arm, paired differences with their intervals, guards, and the conclusion chosen by code. |
+| `guard-replay` | Done on 2026-11-14 | Applies the quote guard of [ADR-0014](../adr/0014-quote-must-be-quoted-in-source.md) to the recorded v2 drafts. No model call, no file written, counters only. |
 
 The harness reads the baseline's files and never writes them. The baseline command accepts only its own two conditions, `url_only` and `page_text`.
 
@@ -221,7 +222,7 @@ The generated report is [`report.md`](../../evals/datasets/v2_compare/report.md)
 - **1 is a date attached to the wrong event.** The date is in the source, about something else. No check on ids or strings can see it.
 - **The guarantee on wording held.** The extractor found 16 quotes in the v2 articles, as many as the validator kept. None was labeled as reworded: 14 are supported and 2 are the cases above. In `page_text`, 8 of 12 quotes are unsupported.
 - **The plain prompt wrote no quote at all**, although its prompt neither asks for quotes nor forbids them. Its zero is partly the result of stating nothing in the riskiest category. The v2 format offers a quote segment, and the model used it 17 times (16 kept, 1 removed).
-- **A speaker guard is now an open decision.** ADR-0010, point 7, left it to the measured count: 2 of 16 kept quotes are misattributed.
+- **A guard on quotes was decided from this count.** ADR-0010, point 7, left it to the measured count: 2 of 16 kept quotes are misattributed. [ADR-0014](../adr/0014-quote-must-be-quoted-in-source.md) keeps a quote only when the source puts its words inside quotation marks; its replay on these drafts is [below](#guard-replay-2026-11-14).
 
 **`page_text` is now a rate, and it is twice its floor.** In the baseline, `found` elements outside the 20 % audit counted as supported, which gave 6 % (15/256) after the second reading of the labels. With every element labeled the rate is 12.9 % (33/256): 18 of the 182 `found` elements that the baseline had not labeled are unsupported (10 %), mostly places (11) and dates (4) that are in the source but used for a claim the source does not make.
 
@@ -241,3 +242,38 @@ The generated report is [`report.md`](../../evals/datasets/v2_compare/report.md)
 - **Two labeling passes inside `page_text`.** Among the `found` elements of `page_text`, 1 of 41 is unsupported in the earlier labels (not blind) and 18 of 182 in the blind sheet. A gap this large comes about one time in ten by chance alone, so the earlier labels may be more lenient. If they are, the bias is in favor of `page_text`.
 - **Blinding is partial.** A v2 article prints quotes as `Speaker : « words »`, and the `page_text` articles are longer and written to be engaging: a row can give its arm away.
 - **Not measured here:** what the architecture is for besides this rate. v2 shows the sources of each sentence and enforces the wording of quotes by code; the plain prompt only asks. This comparison says nothing about readers' trust or about longer, harder sources.
+
+### Guard replay (2026-11-14)
+
+[ADR-0014](../adr/0014-quote-must-be-quoted-in-source.md) adds a rule to the validator: a quote is kept only when its passage lies entirely inside quotation marks in the evidence item it cites. The rule was designed after reading the errors above, so it is not measured on these 16 articles with a new labeled arm. It is replayed instead:
+
+```bash
+uv run python -m evals.v2.compare guard-replay
+```
+
+The step rebuilds the evidence of each article from its frozen snapshot, checks the recorded v2 draft again with the current validator, and prints counters. It calls no model and writes no file. It stops if a recorded draft fails any other check, which would mean that the evidence is no longer the one the draft was written from.
+
+| | Count |
+| --- | --- |
+| Articles replayed (all recorded with `v2-article-1`) | 16 |
+| Quotes kept by `v2-article-1` | 16 |
+| Quotes the new rule rejects | 5 |
+| Articles with at least one quote, before the rule | 9 |
+| Articles with at least one quote, after the rule | 6 |
+
+| Article with a rejected quote | Quotes kept | Rejected | Labels of its v2 quotes |
+| --- | --- | --- | --- |
+| `algerie360-00` | 1 | 1 | 1 `C` |
+| `algerie360-04` | 1 | 1 | 1 `C` |
+| `algerie360-07` | 2 | 2 | 2 `S` |
+| `tsa-06` | 2 | 1 | 2 `S` |
+
+- **The rule rejects both misattributed quotes**, the two labeled `C`.
+- **It also rejects 3 quotes labeled `S`.** Their source gives the words as indirect speech, with no quotation marks. The words and the speaker are right; what the rule refuses is to print them as someone's exact words.
+- **The 11 quotes it keeps are all labeled `S`.**
+
+What this replay is not:
+
+- **It is not a rate for the new prompt.** The published result of this page stays the one of `v2-article-1`. No unsupported rate is stated for `v2-article-2`: with the rule, the model writes a new sentence where a quote was refused, and that text is not labeled.
+- **It says nothing about the speaker.** The rule does not check who is given the words. A passage the source does quote, given to the wrong person, would pass; no such case appears among the 11 kept quotes, and 11 is too few to call it rare.
+- **It is measured on its own design set.** The rule was written from these errors, so rejecting them proves little about other pages. The six [tryout pages](v2-tryout.md) are the only pages outside the sample it runs on.

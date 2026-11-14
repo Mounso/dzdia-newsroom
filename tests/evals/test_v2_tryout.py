@@ -34,6 +34,7 @@ from evals.v2.tryout import (
     latest_fingerprints,
     normalize_url,
     pick_pages,
+    print_counters,
     print_selection,
     run_id_for,
     run_tryout,
@@ -445,7 +446,7 @@ async def test_run_records_both_arms_and_is_idempotent(tmp_path: Path) -> None:
     assert plain.run_id == f"tryout-00:plain:{plain_prompt_fingerprint()[:12]}:m"
     assert v2.settings == {"temperature": 0.0, "response_schema": "ArticleDraft"}
     assert plain.settings == {"temperature": 0.0}
-    assert (v2.prompt_version, plain.prompt_version) == ("v2-article-1", "v1-plain-1")
+    assert (v2.prompt_version, plain.prompt_version) == ("v2-article-2", "v1-plain-1")
     assert v2.outcome == "ok" and v2.retried is False and v2.kept_quotes == 1
     assert v2.n_evidence == 3 and v2.n_sentences == 1 and v2.removed_quotes == 0
     assert v2.draft == VALID.model_dump(mode="json")
@@ -637,6 +638,31 @@ def test_counters_use_the_latest_fingerprint_by_default(
     out = capsys.readouterr().out
     assert "fp-v2 (others present: fp-old)" in out and out.rstrip().endswith("FREEZE")
     assert counters(paths, fingerprint_v2="fp-old").status == "REVISE"
+
+
+def test_the_totals_count_quotes_not_quoted_in_source_at_the_first_attempt(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    def attempts(n: int) -> dict[str, Any]:
+        first = {
+            0: {"quote_not_quoted_in_source": 2, "no_id": 1},
+            1: {"quote_not_quoted_in_source": 1},
+            2: {"no_id": 1},
+        }.get(n)
+        if first is None:
+            return {}
+        # the second attempt is not counted
+        second = AttemptRecord(issues={"quote_not_quoted_in_source": 1})
+        return {"attempts": [AttemptRecord(issues=first), second], "retried": True}
+
+    v2, plain = _records(attempts)
+    v2["tryout-05"] = _run("tryout-05", "v2", error="TimeoutError()", attempts=[])
+    print_counters(PAGE_IDS, v2, plain)
+    totals = capsys.readouterr().out.splitlines()[-1]
+    assert totals == (
+        "Totals v2: 0 failed, 3 retried, 0 kept quotes, 0 removed quotes, "
+        "3 quote_not_quoted_in_source at attempt 1 on 2 pages"
+    )
 
 
 # --- flagged segments (decision U1) ----------------------------------------------------------

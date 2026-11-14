@@ -16,6 +16,9 @@ Steps:
 - `check-labels`: three mechanical checks on the labels, listed by article and key.
 - `report`: counts, rates with intervals, the paired differences and the conclusion, written to
   the comparison's `report.md` and printed; an arm with a pending label gets counts only.
+- `guard-replay`: the quote guard of ADR-0014 replayed on the recorded v2 drafts; calls no model
+  and writes no file; prints per article the quotes kept by the recorded prompt, the quotes the
+  new rule rejects and the labels of the article's v2 quotes, then the totals.
 
 No step prints model text, element values, element ids, arms or labels per row (the report
 names the arms, with counts and rates only).
@@ -36,6 +39,7 @@ from evals.v2.compare.extract import (
     match_compare,
     pending_extractions,
 )
+from evals.v2.compare.guard_replay import guard_replay, replay_lines
 from evals.v2.compare.labels import check_labels, check_lines, export_labels, import_labels
 from evals.v2.compare.paths import ComparePaths
 from evals.v2.compare.report import build_report
@@ -134,6 +138,11 @@ def cmd_report(paths: ComparePaths) -> None:
     print(report)
 
 
+def cmd_guard_replay(paths: ComparePaths) -> None:
+    for line in replay_lines(guard_replay(paths)):
+        print(line)
+
+
 def main(argv: Sequence[str] | None = None) -> None:
     parser = argparse.ArgumentParser(
         prog="python -m evals.v2.compare",
@@ -152,6 +161,9 @@ def main(argv: Sequence[str] | None = None) -> None:
     steps.add_parser("import-labels", help="Import the filled rows of the sheet")
     steps.add_parser("check-labels", help="Run the three mechanical checks on the labels")
     steps.add_parser("report", help="Write and print the comparison report")
+    steps.add_parser(
+        "guard-replay", help="Replay the quote guard of ADR-0014 on the recorded v2 drafts (code)"
+    )
 
     args = parser.parse_args(argv)
     paths = ComparePaths.default()
@@ -172,6 +184,8 @@ def main(argv: Sequence[str] | None = None) -> None:
                 cmd_check_labels(paths)
             case "report":
                 cmd_report(paths)
+            case "guard-replay":
+                cmd_guard_replay(paths)
     except CompareError as exc:
         sys.exit(str(exc))
 

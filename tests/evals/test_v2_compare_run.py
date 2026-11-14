@@ -122,7 +122,7 @@ async def test_run_records_both_arms_for_the_non_opaque_items(tmp_path: Path) ->
     v2, plain = records[:2]
     assert (v2.task, v2.repeat, plain.task, plain.repeat) == ("article", 0, "article", 0)
     assert (v2.model, plain.model) == (MODEL, MODEL)
-    assert (v2.prompt_version, plain.prompt_version) == ("v2-article-1", "v1-plain-1")
+    assert (v2.prompt_version, plain.prompt_version) == ("v2-article-2", "v1-plain-1")
     assert v2.prompt_fingerprint == arms.V2_PROMPT_FINGERPRINT
     assert plain.prompt_fingerprint == arms.PLAIN_PROMPT_FINGERPRINT
     assert v2.settings == {"temperature": 0.0, "response_schema": "ArticleDraft"}

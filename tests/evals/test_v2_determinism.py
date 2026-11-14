@@ -74,7 +74,7 @@ async def test_run_sends_the_temperatures_and_records_hashes_only(tmp_path: Path
     assert plain_cold.settings == {"temperature": 0.0}
     assert plain_hot.settings == {"temperature": 1.0}
     assert v2.settings == {"temperature": 0.0, "response_schema": "ArticleDraft"}
-    assert (plain_cold.prompt_version, v2.prompt_version) == ("v1-plain-1", "v2-article-1")
+    assert (plain_cold.prompt_version, v2.prompt_version) == ("v1-plain-1", "v2-article-2")
     assert plain_hot.prompt_fingerprint == plain_prompt_fingerprint()
     assert v2.prompt_fingerprint == v2_prompt_fingerprint()
     plain_fp, v2_fp = plain_prompt_fingerprint()[:12], v2_prompt_fingerprint()[:12]

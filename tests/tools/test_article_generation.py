@@ -1,5 +1,5 @@
 """Specification tests of `find_issues` and `generate_article` (ADR-0009 point 4, ADR-0011,
-ADR-0012, review finding V-9), plus the outcome log line of `generate_article`."""
+ADR-0012, ADR-0014, review finding V-9), plus the outcome log line of `generate_article`."""
 
 import logging
 
@@ -27,6 +27,8 @@ EVIDENCE = build_evidence(
 )
 GOOD_QUOTE = "Nous reviendrons l’an prochain"
 BAD_QUOTE = "Nous reviendrons l’année prochaine"
+# In E2, but the journalist's own words: no quotation mark around them (ADR-0014).
+NARRATION = "Le festival s’est ouvert le 3 mai"
 
 
 def sentence(text: str, *ids: str) -> SentenceSegment:
@@ -132,9 +134,47 @@ def test_a_missing_id_comes_before_quotation_marks_in_a_sentence() -> None:
 
 
 def test_quotation_marks_inside_a_quote_are_not_an_issue() -> None:
-    verbatim = quote("Nous reviendrons l’an prochain », a déclaré Karim Ziani")
-    speaker = QuoteSegment(kind="quote", speaker="“Karim” Ziani", text=GOOD_QUOTE, evidence_id="E3")
-    assert find_issues(draft([OPENING, verbatim, speaker]), EVIDENCE) == []
+    evidence = build_evidence(
+        "Le festival s’est ouvert le 3 mai.\n"
+        "« Le film “Papicha” ouvrira le festival », a déclaré Karim Ziani."
+    )
+    verbatim = quote("Le film “Papicha” ouvrira le festival", evidence_id="E2")
+    speaker = QuoteSegment(kind="quote", speaker="“Karim” Ziani", text="Le film", evidence_id="E2")
+    opening = sentence("Le festival s’est ouvert le 3 mai.", "E1")
+    assert find_issues(draft([opening, verbatim, speaker]), evidence) == []
+
+
+def test_a_quote_not_inside_quotation_marks_in_its_evidence() -> None:
+    [issue] = find_issues(draft([OPENING], [quote(NARRATION, evidence_id="E2")]), EVIDENCE)
+    assert (issue.kind, issue.paragraph, issue.segment) == (
+        IssueKind.QUOTE_NOT_QUOTED_IN_SOURCE,
+        1,
+        0,
+    )
+    assert (issue.text, issue.detail) == (NARRATION, "E2")
+
+
+@pytest.mark.parametrize(
+    ("segment", "kind"),
+    [
+        # unknown id first, whatever the text
+        (quote(NARRATION, evidence_id="E42"), IssueKind.QUOTE_UNKNOWN_ID),
+        (quote(BAD_QUOTE, evidence_id="E42"), IssueKind.QUOTE_UNKNOWN_ID),
+        # then words not in the item, wherever they would lie
+        (
+            quote("Le festival s’est ouvert le 4 mai", evidence_id="E2"),
+            IssueKind.QUOTE_NOT_IN_EVIDENCE,
+        ),
+        (quote(BAD_QUOTE), IssueKind.QUOTE_NOT_IN_EVIDENCE),
+        # then words in the item but outside quotation marks
+        (quote(NARRATION, evidence_id="E2"), IssueKind.QUOTE_NOT_QUOTED_IN_SOURCE),
+        (quote("a déclaré Karim Ziani"), IssueKind.QUOTE_NOT_QUOTED_IN_SOURCE),
+    ],
+)
+def test_a_quote_gets_at_most_one_issue_in_the_adr_0014_order(
+    segment: QuoteSegment, kind: IssueKind
+) -> None:
+    assert [i.kind for i in find_issues(draft([OPENING, segment]), EVIDENCE)] == [kind]
 
 
 def test_a_draft_with_no_paragraph_is_empty() -> None:
@@ -191,7 +231,7 @@ async def test_a_valid_first_draft_uses_one_call() -> None:
     assert result.article == VALID
     assert len(result.attempts) == 1 and result.attempts[0].issues == ()
     assert result.removed_quotes == 0
-    assert result.model == llm.model and result.prompt_version == "v2-article-1"
+    assert result.model == llm.model and result.prompt_version == "v2-article-2"
     assert llm.prompts == [build_prompt(EVIDENCE)]
 
 
@@ -294,6 +334,30 @@ async def test_both_removable_quote_errors_are_removed_after_the_retry() -> None
     llm = FakeLLM([bad, bad])
     result = await generate_article(llm, EVIDENCE)
     assert result.article == draft([OPENING]) and result.removed_quotes == 2
+
+
+async def test_a_quote_still_not_quoted_after_the_retry_is_removed_and_counted() -> None:
+    bad = draft([OPENING, quote(GOOD_QUOTE), quote(NARRATION, evidence_id="E2")])
+    llm = FakeLLM([bad, bad])
+    result = await generate_article(llm, EVIDENCE)
+    assert result.article == draft([OPENING, quote(GOOD_QUOTE)])
+    assert result.removed_quotes == 1
+    assert [[i.kind for i in a.issues] for a in result.attempts] == [
+        [IssueKind.QUOTE_NOT_QUOTED_IN_SOURCE],
+        [IssueKind.QUOTE_NOT_QUOTED_IN_SOURCE],
+    ]
+    assert (
+        f"- la citation « {NARRATION} » n'est pas entre guillemets dans la preuve E2 : la source "
+        "ne la donne pas comme des paroles exactes."
+    ) in llm.prompts[1].splitlines()
+
+
+async def test_a_quote_not_quoted_rewritten_as_a_sentence_at_the_retry_succeeds() -> None:
+    rewritten = draft([OPENING, sentence("Le festival a ouvert ses portes le 3 mai.", "E2")])
+    llm = FakeLLM([draft([OPENING, quote(NARRATION, evidence_id="E2")]), rewritten])
+    result = await generate_article(llm, EVIDENCE)
+    assert result.article == rewritten and result.removed_quotes == 0
+    assert len(result.attempts) == 2 and result.attempts[1].issues == ()
 
 
 async def test_quotation_marks_left_after_the_retry_fail_the_generation() -> None:

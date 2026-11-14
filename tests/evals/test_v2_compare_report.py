@@ -628,6 +628,23 @@ def test_the_validator_counters(tmp_path: Path) -> None:
     assert "| Generations that failed validation | 1 |" in section
 
 
+def test_the_validator_counters_list_the_kinds_of_v2_article_1_only(tmp_path: Path) -> None:
+    """The report describes records of `v2-article-1`: a kind added later has no row
+    (ADR-0014, point 5)."""
+    section = _section(build_report(_files(tmp_path)), "Validator counters of v2")
+    kinds = [line.split(": ", 1)[1].split(" |")[0] for line in section if "First-attempt" in line]
+    assert kinds == [
+        "unparsable",
+        "unknown_id",
+        "no_id",
+        "quote_not_in_evidence",
+        "quote_unknown_id",
+        "quotation_marks",
+        "empty",
+    ]
+    assert not any("quote_not_quoted_in_source" in line for line in section)
+
+
 def test_the_report_from_files(tmp_path: Path) -> None:
     report = build_report(_files(tmp_path))
     status = _section(report, "Status")
