@@ -4,7 +4,8 @@ import argparse
 import asyncio
 import sys
 from collections.abc import Sequence
-from typing import cast
+from pathlib import Path
+from typing import Any, cast
 
 import httpx
 
@@ -15,6 +16,7 @@ from evals.baseline_v1.labeling import (
     committed_note,
     read_label_sheet,
     select_for_labeling,
+    select_unlabeled_found,
     write_label_sheet,
 )
 from evals.baseline_v1.matcher import DEFAULT_NAME_THRESHOLD, SourceIndex, match_element
@@ -36,6 +38,7 @@ from evals.baseline_v1.schemas import (
     RunRecord,
     SampleItem,
     SnapshotMeta,
+    Task,
 )
 from evals.baseline_v1.snapshot import (
     load_snapshot_text,
@@ -207,20 +210,54 @@ def cmd_match(paths: Paths, name_threshold: float) -> None:
     print(f"Matched {len(matched)} elements: {found} found, {len(matched) - found} not found")
 
 
-def cmd_export_labels(paths: Paths) -> None:
+Cell = tuple[Condition, Task]
+_CELL_TASKS: tuple[Task, ...] = ("summary", "article")
+
+
+def _sheet(paths: Paths, cell: Cell | None) -> Path:
+    return paths.label_sheet if cell is None else paths.cell_label_sheet(*cell)
+
+
+def cmd_export_labels(paths: Paths, cell: Cell | None = None, force: bool = False) -> None:
+    """Write the sheet to label: the default selection, or with `cell` every unlabeled 'found'
+    element of one condition and task on original items (ADR-0016, point 2)."""
+    sheet = _sheet(paths, cell)
+    if sheet.exists() and not force:
+        sys.exit(
+            f"{sheet} exists and may hold labels or notes not yet imported: run 'import-labels' "
+            "first, or use --force to overwrite it."
+        )
     elements = read_jsonl(paths.elements, ElementRecord)
     if any(e.match_status is None for e in elements):
         sys.exit("Some elements are not matched yet: run the 'match' step first.")
     labeled = {lab.element_id for lab in read_jsonl(paths.labels, HumanLabel)}
-    count = write_label_sheet(paths.label_sheet, select_for_labeling(elements, labeled))
-    print(f"{count} elements to label -> {paths.label_sheet}")
+    if cell is None:
+        count = write_label_sheet(sheet, select_for_labeling(elements, labeled))
+        print(f"{count} elements to label -> {sheet}")
+        print("Fill the 'label' column with S (SUPPORTED), C (CONTRADICTED) or N (NOT_IN_SOURCE),")
+        print("judging against the reviewed snapshot text only, then run 'import-labels'.")
+        return
+    condition, task = cell
+    opaque = {i.item_id for i in read_jsonl(paths.sample, SampleItem) if i.is_opaque}
+    selected = select_unlabeled_found(
+        elements, labeled, condition=condition, task=task, excluded_items=opaque
+    )
+    count = write_label_sheet(sheet, selected)
+    print(f"{count} elements to label ({condition} / {task}) -> {sheet}")
+    print(
+        "This sheet is not blind: every row is a 'found' element of that cell. "
+        "Label it with the baseline's guide (docs/evals/baseline-v1.md)."
+    )
     print("Fill the 'label' column with S (SUPPORTED), C (CONTRADICTED) or N (NOT_IN_SOURCE),")
-    print("judging against the reviewed snapshot text only, then run 'import-labels'.")
+    print(
+        "judging against the reviewed snapshot text only, "
+        f"then run 'import-labels --cell {condition} {task}'."
+    )
 
 
-def cmd_import_labels(paths: Paths) -> None:
+def cmd_import_labels(paths: Paths, cell: Cell | None = None) -> None:
     labels = latest_by(read_jsonl(paths.labels, HumanLabel), lambda lab: lab.element_id)
-    new = read_label_sheet(paths.label_sheet)
+    new = read_label_sheet(_sheet(paths, cell))
     labels.update({lab.element_id: lab for lab in new})
     # The file is rewritten whole: labels imported before notes were reduced lose their text too.
     write_jsonl(
@@ -244,6 +281,41 @@ def cmd_report(paths: Paths) -> None:
     print(report)
 
 
+class _CellAction(argparse.Action):
+    """Parse `--cell CONDITION TASK`, each value checked against its own choices."""
+
+    def __call__(
+        self,
+        parser: argparse.ArgumentParser,
+        namespace: argparse.Namespace,
+        values: str | Sequence[Any] | None,
+        option_string: str | None = None,
+    ) -> None:
+        condition, task = cast(list[str], values)
+        if condition not in V1_CONDITIONS:
+            parser.error(
+                f"argument --cell: invalid condition '{condition}' "
+                f"(choose from {', '.join(V1_CONDITIONS)})"
+            )
+        if task not in _CELL_TASKS:
+            parser.error(
+                f"argument --cell: invalid task '{task}' (choose from {', '.join(_CELL_TASKS)})"
+            )
+        setattr(namespace, self.dest, (condition, task))
+
+
+def _add_cell_option(parser: argparse.ArgumentParser, help_text: str) -> None:
+    parser.add_argument(
+        "--cell",
+        nargs=2,
+        metavar=("CONDITION", "TASK"),
+        action=_CellAction,
+        default=None,
+        help=f"{help_text}; CONDITION in {', '.join(V1_CONDITIONS)}, TASK in "
+        f"{', '.join(_CELL_TASKS)}",
+    )
+
+
 def main(argv: Sequence[str] | None = None) -> None:
     parser = argparse.ArgumentParser(prog="python -m evals.baseline_v1", description=__doc__)
     steps = parser.add_subparsers(dest="step", required=True)
@@ -259,8 +331,11 @@ def main(argv: Sequence[str] | None = None) -> None:
     steps.add_parser("extract", help="Extract critical elements from the outputs (LLM)")
     match = steps.add_parser("match", help="Look for each element in the reference text (code)")
     match.add_argument("--name-threshold", type=float, default=DEFAULT_NAME_THRESHOLD)
-    steps.add_parser("export-labels", help="Write the CSV sheet of elements to label")
-    steps.add_parser("import-labels", help="Import the filled CSV sheet")
+    export = steps.add_parser("export-labels", help="Write the CSV sheet of elements to label")
+    _add_cell_option(export, "label every unlabeled 'found' element of this cell (own sheet)")
+    export.add_argument("--force", action="store_true", help="Overwrite an existing sheet")
+    import_ = steps.add_parser("import-labels", help="Import the filled CSV sheet")
+    _add_cell_option(import_, "import the sheet written by 'export-labels --cell'")
     steps.add_parser("report", help="Compute rates and write the markdown report")
 
     args = parser.parse_args(argv)
@@ -283,9 +358,9 @@ def main(argv: Sequence[str] | None = None) -> None:
         case "match":
             cmd_match(paths, args.name_threshold)
         case "export-labels":
-            cmd_export_labels(paths)
+            cmd_export_labels(paths, cell=args.cell, force=args.force)
         case "import-labels":
-            cmd_import_labels(paths)
+            cmd_import_labels(paths, cell=args.cell)
         case "report":
             cmd_report(paths)
 

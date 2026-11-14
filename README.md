@@ -6,11 +6,28 @@
 
 AI assistant for the editorial team of [dzdia.com](https://dzdia.com), an Algerian cultural media. Journalists talk to it on Telegram. It is designed to turn a link, an audio or a video into a sourced article draft, and to post a daily briefing of web and social news. Every fact will cite its evidence, and nothing will reach WordPress without human approval.
 
-> **Status: week 1 of 5.** The runtime foundation is built and tested end to end with a real bot: Telegram webhook, Postgres job queue, worker, Docker stack. The hallucination baseline of the legacy bot is in progress. AI flows start in week 2. See the [roadmap](docs/roadmap.md).
+> **Status (2026-11-14): stage 2 of 3.** The runtime foundation is built and tested end to end with a real bot: Telegram webhook, Postgres job queue, worker, Docker stack. The hallucination baseline of the legacy bot is done. The first slice of the rewrite, one link in and one sourced article out, has its evidence, generation and validation code and was measured offline against the legacy prompt; page fetching and the Telegram wiring of that slice are not written yet, so the bot does not write articles today. See the [roadmap](docs/roadmap.md).
 
 ## Why
 
-The prototype this project replaces ("v1") never downloaded the links it was given: the model wrote articles from the words of the URL alone. Rather than just fix it, the rewrite starts by **measuring** it: a [hallucination baseline](docs/evals/baseline-v1.md) on 20 real articles, with human labels and confidence intervals, that will be rerun on v2 for a like-for-like comparison.
+The prototype this project replaces ("v1") never downloaded the links it was given: the model wrote articles from the words of the URL alone. Rather than just fix it, the rewrite starts by **measuring** it: a [hallucination baseline](docs/evals/baseline-v1.md) on 16 real news articles, with human labels and confidence intervals, then the [same protocol on the rewrite](docs/evals/v2-comparison.md).
+
+## What was measured
+
+Share of the checkable elements of a generated article (persons, organizations, places, numbers, dates, quotes) that the source does not support, on the same 16 articles, with the same model. Every element is labeled by hand; the intervals are 95 % intervals from a bootstrap over articles.
+
+| What the model gets | Unsupported elements | Articles with at least one |
+|---|---|---|
+| v1 prompt, the URL only (v1 as shipped) | 57 % [48–67 %] (72/126) | 15 of 16 |
+| v1 prompt, the page text | 12.9 % [8.5–18.1 %] (33/256) | 15 of 16 |
+| A plain new prompt, the page text | 0.0 % (0/227) | 0 of 16 |
+| v2: evidence ids, structured output, validator | 2.6 % [0.0–6.3 %] (5/194) | 3 of 16 |
+
+- **From the URL alone, more than half of what a v1 article states is unsupported.** Given the page text, the old prompt still leaves about one element in eight unsupported, in articles that state twice as many elements.
+- **The gain of the rewrite comes from its prompt, not from its architecture**: on this metric a plain prompt with the same instructions does as well as v2. The comparison was designed to be able to say so, with its conclusion wording fixed before the labels.
+- **Limits:** 16 articles from two outlets on one day, one labeler, general news rather than the outlet's own cultural content. The first row was not labeled blind; the two new arms and most of the second row were. Zero observed is not zero: with 0 articles of 16, up to about 17 % of articles could still contain an unsupported element.
+
+Details, method and limits: [baseline](docs/evals/baseline-v1.md#results) and [v2 comparison](docs/evals/v2-comparison.md#labels-and-report-2026-11-14).
 
 ## Architecture at a glance
 
@@ -57,8 +74,8 @@ Details: [getting started](docs/development/getting-started.md) and [deployment]
 ## Repository layout
 
 ```text
-src/dzdia_newsroom/   application: api/, channels/, db/, worker/, config, logging
-evals/                evaluation harnesses (baseline_v1) and committed datasets
+src/dzdia_newsroom/   application: api/, channels/, db/, worker/, llm/, tools/, config, logging
+evals/                evaluation harnesses (baseline_v1, v2, dzdia_corpus) and committed datasets
 tests/                unit tests and Postgres integration tests
 deploy/               production VM: provisioning, deployment and rollback, encrypted backups
 docs/                 architecture, ADRs, operations, development, evals

@@ -2,7 +2,8 @@
 
 Selected for labeling: every `not_found` element + a stable ~20 % audit sample of `found` ones.
 The audit sample is chosen by hashing the element_id, so it does not change when elements are
-added or the pipeline is re-run.
+added or the pipeline is re-run. A cell (one condition and task) can also be labeled in full:
+`select_unlabeled_found` gives its remaining `found` elements (ADR-0016, point 2).
 
 An imported label keeps from its note only the speaker marker `locuteur`: any other note text
 stays in the local sheet.
@@ -14,7 +15,7 @@ from collections.abc import Iterable
 from pathlib import Path
 from typing import get_args
 
-from evals.baseline_v1.schemas import ElementRecord, HumanLabel, Label
+from evals.baseline_v1.schemas import Condition, ElementRecord, HumanLabel, Label, Task
 
 AUDIT_RATE_PERCENT = 20
 SPEAKER_MARKER = "locuteur"
@@ -38,6 +39,31 @@ def select_for_labeling(
         for e in elements
         if e.element_id not in already_labeled
         and (e.match_status == "not_found" or in_audit_sample(e.element_id))
+    ]
+    return sorted(selected, key=lambda e: (e.item_id, e.run_id, e.element_id))
+
+
+def select_unlabeled_found(
+    elements: Iterable[ElementRecord],
+    already_labeled: set[str],
+    *,
+    condition: Condition,
+    task: Task,
+    excluded_items: set[str],
+) -> list[ElementRecord]:
+    """Every unlabeled 'found' element of one condition and task (ADR-0016, point 2).
+
+    No audit sampling: the cell is labeled in full. `excluded_items` holds the opaque duplicates,
+    which the cell's rates do not count.
+    """
+    selected = [
+        e
+        for e in elements
+        if e.match_status == "found"
+        and e.condition == condition
+        and e.task == task
+        and e.item_id not in excluded_items
+        and e.element_id not in already_labeled
     ]
     return sorted(selected, key=lambda e: (e.item_id, e.run_id, e.element_id))
 

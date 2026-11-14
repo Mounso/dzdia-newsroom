@@ -3,6 +3,8 @@
 from dataclasses import dataclass
 from pathlib import Path
 
+from evals.baseline_v1.schemas import Condition, Task
+
 _EVALS_DIR = Path(__file__).resolve().parent.parent
 
 
@@ -57,3 +59,7 @@ class Paths:
     @property
     def label_sheet(self) -> Path:
         return self.data_dir / "to_label.csv"
+
+    def cell_label_sheet(self, condition: Condition, task: Task) -> Path:
+        """Sheet of the unlabeled 'found' elements of one condition and task (ADR-0016)."""
+        return self.data_dir / f"to_label_{condition}_{task}.csv"
