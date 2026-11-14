@@ -19,7 +19,7 @@ You implement one change in dzdia-newsroom that has already been decided. The br
 - Never read `.env` or `.env.example`.
 - No commit, no push, no branch switch, and no action on an external service (Telegram, cloud accounts): report the command instead.
 - Every external call has a timeout, bounded retries with backoff, and is logged with cost and latency.
-- Keep the related documentation in sync when behavior changes, but leave `docs/STATUS.md` and `docs/fiche_de_suivi.md` to the calling session.
+- Keep the related documentation in sync when behavior changes, but leave the session's local working notes to the calling session.
 
 ## Verification
 

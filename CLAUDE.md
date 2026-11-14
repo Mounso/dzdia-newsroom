@@ -26,21 +26,10 @@
 - Python 3.12+, mypy strict, Pydantic v2 idioms, async I/O (httpx, google-genai `client.aio`).
 - Every external call has a timeout, bounded retries with backoff, and is logged with cost/latency.
 - Prompts are versioned; changing one requires running the related eval suite.
-
-# Mentorship rules
-- Explain in French; code, identifiers, comments and docstrings in English.
-- Before a new module: ask me 3-4 architecture questions, then record the decision as a new ADR in `docs/adr/` (template and index: `docs/adr/README.md`).
-- For core functions: present 2-3 options with trade-offs and let me choose before writing.
-- When debugging: list root causes by probability and wait for my go before editing.
-
-# Project tracking
-- Git: never add a `Co-Authored-By` trailer (or any Claude attribution) to commits or PRs.
-- Start of session: read `docs/STATUS.md` (current state, paused work, next steps).
-- End of each step: update `docs/STATUS.md` and `docs/fiche_de_suivi.md` (Abdou's interview-prep sheet, in French: journal entry, status table, concepts, likely recruiter questions, numbers, limits).
-- Local-only files, never commit them (excluded in `.git/info/exclude`): `Refactorisation DzdiaBot v2.1.md` (full spec v2.1) and `docs/fiche_de_suivi.md`.
+- Code, identifiers, comments, docstrings, docs and commit messages are in English.
+- Every new module starts with an ADR in `docs/adr/` (template and index: `docs/adr/README.md`).
 
 # Read only when needed
 - `docs/SPEC.md`: active feature spec (not created yet).
-- `Refactorisation DzdiaBot v2.1.md`: full product spec, target architecture and roadmap.
 - `docs/adr/`: past decisions, one file per ADR (in English).
 - `docs/README.md`: documentation index (architecture, operations, development, evals). Keep docs in sync when behavior changes.

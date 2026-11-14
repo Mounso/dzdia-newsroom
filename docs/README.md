@@ -35,4 +35,3 @@ Documentation of Dzdia Newsroom Engine, organized by what you want to do. Start 
 ## Plan
 
 - [Roadmap](roadmap.md): weekly plan and next steps.
-- [Status](STATUS.md): detailed working notes for the current session (in French).

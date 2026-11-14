@@ -1,6 +1,6 @@
 # Roadmap
 
-Where the project stands and what comes next. The plan follows the product spec v2.1 (private document); every new module starts with an ADR. Day-to-day progress is tracked in [`STATUS.md`](STATUS.md).
+Where the project stands and what comes next. The plan follows the product spec v2.1 (private document); every new module starts with an ADR.
 
 ## Principles
 
