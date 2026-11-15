@@ -15,7 +15,7 @@ The target product has two confirmed use cases:
 1. **Article from source material.** A journalist sends a link, an audio or a video; the system extracts the facts, proposes angles, drafts an article whose every fact cites its evidence, and creates a WordPress draft only after human approval.
 2. **Morning briefing.** A scheduled workflow collects press and social sources, deduplicates and triages topics, and posts a briefing to the team's Telegram group.
 
-**Current state (2026-11-14):** the runtime foundation is built and tested end to end: Telegram webhook, Postgres job queue, worker, Docker stack. The hallucination baseline of v1 is done ([results](../evals/baseline-v1.md#results)). The first v2 slice has its evidence, generation and validation code, measured offline in the [v2 comparison](../evals/v2-comparison.md); page fetching and the Telegram wiring of that slice are not written yet. See the [roadmap](../roadmap.md).
+**Current state (2026-11-15):** the runtime foundation is built and tested end to end: Telegram webhook, Postgres job queue, worker, Docker stack. The hallucination baseline of v1 is done ([results](../evals/baseline-v1.md#results)). The first v2 slice has its evidence, generation and validation code, measured offline in the [v2 comparison](../evals/v2-comparison.md); page fetching behind the SSRF guard and text extraction are written and tested without the network ([ADR-0018](../adr/0018-guarded-fetch-and-pasted-text.md)); the worker and Telegram wiring of that slice is not written yet, so no real page has been fetched. See the [roadmap](../roadmap.md).
 
 ## System context
 

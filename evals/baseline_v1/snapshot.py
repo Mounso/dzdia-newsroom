@@ -5,13 +5,13 @@ text is the labeling reference.
 """
 
 import hashlib
-import re
 from datetime import UTC, datetime
 from pathlib import Path
 
 import httpx
-import trafilatura
 
+from dzdia_newsroom.tools.page_text import clean_text as clean_text  # re-exported for callers
+from dzdia_newsroom.tools.page_text import extract_body, has_paywall_marker, join_title
 from evals.baseline_v1.sample import USER_AGENT
 from evals.baseline_v1.schemas import SampleItem, SnapshotMeta
 
@@ -24,37 +24,22 @@ def sha256_text(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
-# In-body links to other articles ("🟢 À LIRE AUSSI : <other headline>"): their facts are not part
-# of the article and would make unrelated elements look "found".
-_RELATED_LINK_LINE = re.compile(r"^\W*[AÀ] LIRE AUSSI\b.*$", re.IGNORECASE | re.MULTILINE)
-
-
-def clean_text(text: str) -> str:
-    text = _RELATED_LINK_LINE.sub("", text)
-    return "\n".join(line for line in text.splitlines() if line.strip())
-
-
 class PaywallError(ExtractionError):
     pass
 
 
-# Truncated premium articles: the reference would miss facts that v1 may state correctly.
-_PAYWALL_MARKERS = ("lire la suite de cet article", "réservé aux abonnés")
-
-
 def extract_main_text(html: str, title: str) -> str:
-    """Article reference text: headline (it carries facts too) + cleaned body."""
-    lowered = html.lower()
-    if any(marker in lowered for marker in _PAYWALL_MARKERS):
+    """Article reference text: headline (it carries facts too) + cleaned body.
+
+    Shares its core with production (ADR-0018, point 9). The eval refuses a paywalled page: the
+    reference would miss facts that v1 may state correctly.
+    """
+    if has_paywall_marker(html):
         raise PaywallError("article is truncated by a paywall")
-    text = trafilatura.extract(
-        html, include_comments=False, include_tables=True, favor_precision=True
-    )
-    if not text or not text.strip():
+    body = extract_body(html)
+    if not body:
         raise ExtractionError("trafilatura found no readable article body")
-    body = clean_text(str(text))
-    title = title.strip()
-    return body if not title or body.startswith(title) else f"{title}\n{body}"
+    return join_title(title, body)
 
 
 def reextract(meta: SnapshotMeta, snapshot_dir: Path, title: str) -> SnapshotMeta:
