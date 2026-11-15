@@ -45,5 +45,6 @@ An ADR that only changes part of an earlier one *amends* it: both stay accepted,
 | 0014 | [A quote is kept only when the source itself puts its words inside quotation marks](0014-quote-must-be-quoted-in-source.md) | Accepted | 2026-11-14 | Amends 0009, 0011, 0012; related to 0010, 0013 |
 | 0015 | [The published Dzdia articles are copied locally by a committed step, as a style reference only](0015-dzdia-corpus-local-copy.md) | Accepted | 2026-11-14 | Related to 0001, 0009, 0014 |
 | 0016 | [The v1 baseline is reported per task, with the article task fully labeled and every other rate printed as a floor](0016-baseline-reported-per-task.md) | Accepted | 2026-11-14 | Amends 0001; related to 0010, 0013 |
+| 0017 | [The v2 pipeline stays the production path of the slice, for code-checked quotes and traceable sources, not for a lower rate](0017-v2-stays-the-production-path.md) | Accepted | 2026-11-15 | Related to 0009, 0010, 0014, 0015 |
 
 > ADRs 0001-0006 were written in French and translated to English on 2026-10-28 with no change in substance; the French originals are in the git history (`docs/architecture_decisions.md`, commit 8e32200).

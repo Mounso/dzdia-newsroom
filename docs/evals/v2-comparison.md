@@ -241,7 +241,7 @@ The generated report is [`report.md`](../../evals/datasets/v2_compare/report.md)
 - **The gap between the two new arms rests on three articles** and on one failure mode. It does not show that the architecture makes articles worse in general; it shows that its quote check is incomplete, and that it brought no measurable gain here.
 - **Two labeling passes inside `page_text`.** Among the `found` elements of `page_text`, 1 of 41 is unsupported in the earlier labels (not blind) and 18 of 182 in the blind sheet. A gap this large comes about one time in ten by chance alone, so the earlier labels may be more lenient. If they are, the bias is in favor of `page_text`.
 - **Blinding is partial.** A v2 article prints quotes as `Speaker : « words »`, and the `page_text` articles are longer and written to be engaging: a row can give its arm away.
-- **Not measured here:** what the architecture is for besides this rate. v2 shows the sources of each sentence and enforces the wording of quotes by code; the plain prompt only asks. This comparison says nothing about readers' trust or about longer, harder sources.
+- **Not measured here:** what the architecture is for besides this rate. v2 shows the sources of each sentence and enforces the wording of quotes by code; the plain prompt only asks. This comparison says nothing about readers' trust or about longer, harder sources. The pipeline is kept as the production path for these two properties, not for the rate ([ADR-0017](../adr/0017-v2-stays-the-production-path.md)); whether journalists use the sources is untested.
 
 ### Guard replay (2026-11-14)
 
