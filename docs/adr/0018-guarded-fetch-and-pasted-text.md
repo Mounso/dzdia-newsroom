@@ -4,6 +4,7 @@
 - **Date:** 2026-11-15
 - **Deciders:** Abdou (author), with Claude as reviewer
 - **Amends:** [ADR-0009](0009-v2-link-to-sourced-article-slice.md) (the scope: pasted text enters the slice; point 6: where the guard sits, limits, extraction; point 7: one more tool module; point 9: error types; the kata split for the guard)
+- **Amended by:** [ADR-0019](0019-lightest-wiring-of-the-slice.md) (point 12: pasted text is named in the source line of the single reply)
 - **Related:** [ADR-0002](0002-algerie-360-replaces-el-watan.md) (sites that refuse a plain client), [ADR-0014](0014-quote-must-be-quoted-in-source.md) (the quote guard), [ADR-0017](0017-v2-stays-the-production-path.md) (point 7: inputs are decided at this step); [independent review](../reviews/2026-11-13-independent-review.md), findings V-10, V-11, V-15, V-16; [security](../architecture/security.md)
 
 ## Context

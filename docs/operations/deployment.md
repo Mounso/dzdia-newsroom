@@ -36,7 +36,7 @@ flowchart LR
 
 - Docker Desktop, started before any `docker` command. On Windows, Docker Desktop runs Linux containers through WSL 2.
 - A development bot created with BotFather, and its token.
-- A `.env` file at the repository root with at least `POSTGRES_PASSWORD`, `TELEGRAM_WEBHOOK_SECRET`, `TELEGRAM_BOT_TOKEN` and `TELEGRAM_ALLOWED_USER_IDS` (see [configuration](configuration.md)).
+- A `.env` file at the repository root with at least `POSTGRES_PASSWORD`, `TELEGRAM_WEBHOOK_SECRET`, `TELEGRAM_BOT_TOKEN`, `TELEGRAM_ALLOWED_USER_IDS` and `GEMINI_API_KEY` (see [configuration](configuration.md)). Compose reads the whole file before it starts any service: without `GEMINI_API_KEY`, every `docker compose` command fails, not only the worker.
 
 ### Start
 
@@ -66,7 +66,7 @@ docker compose run --rm telegram-cli webhook-info
 curl http://127.0.0.1:8000/health
 ```
 
-`webhook-info` prints `url`, `pending_update_count`, `last_error_date` and `last_error_message`. Then send a text message to the bot from an allowed account: the worker replies "Bien reçu.".
+`webhook-info` prints `url`, `pending_update_count`, `last_error_date` and `last_error_message`. Then send a short text message to the bot in a private chat from an allowed account: the worker replies with its help text.
 
 ### Stop
 

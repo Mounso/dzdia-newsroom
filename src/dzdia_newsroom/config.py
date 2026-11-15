@@ -1,7 +1,8 @@
 """Typed settings loaded from the environment (and `.env` in development).
 
-Each process only loads the settings it needs (ADR-005): the API never sees the bot token,
-DB commands never need an LLM key.
+Each process only loads the settings it needs (ADR-005): the API never sees the bot token nor
+the LLM key, DB-only commands (migrations) never need an LLM key. The worker loads the LLM
+settings too, since it generates the drafts (ADR-0019, point 10).
 """
 
 import re
@@ -21,7 +22,7 @@ _WEBHOOK_SECRET = re.compile(r"[A-Za-z0-9_-]{32,256}")
 
 
 class LLMSettings(BaseSettings):
-    """Gemini access, shared by the v2 generator and the evals."""
+    """Gemini access, shared by the v2 generator (the worker, ADR-0019) and the evals."""
 
     model_config = _ENV
 
@@ -43,7 +44,8 @@ class LLMSettings(BaseSettings):
 
 
 class DatabaseSettings(BaseSettings):
-    """Kept apart from `LLMSettings` so DB commands (migrations, worker) need no LLM key."""
+    """Kept apart from `LLMSettings` so DB-only commands (migrations) need no LLM key. The
+    worker loads both."""
 
     model_config = _ENV
 

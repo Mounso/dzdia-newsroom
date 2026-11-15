@@ -4,12 +4,14 @@ no real network."""
 import asyncio
 import gzip
 import importlib.util
+import inspect
 import logging
 from collections.abc import AsyncIterator, Awaitable, Callable
 
 import httpx
 import pytest
 
+from dzdia_newsroom.tools import fetch_page
 from dzdia_newsroom.tools.fetch_page import (
     MAX_BODY_BYTES,
     MAX_REDIRECTS,
@@ -20,6 +22,7 @@ from dzdia_newsroom.tools.fetch_page import (
     FetchReason,
     InvalidLinkError,
     UnsupportedLinkError,
+    check_link,
     fetch_html,
 )
 
@@ -199,6 +202,19 @@ async def test_an_invalid_first_url_is_refused_before_any_request(url: str) -> N
 async def test_video_and_social_links_are_unsupported_with_no_request(url: str) -> None:
     _, recorder, _ = await _fetch_error(UnsupportedLinkError, _sequence(_ok()), url=url)
     assert recorder.requests == []
+
+
+def test_check_link_is_the_public_pre_network_check() -> None:
+    # Synchronous and given no client: it cannot make a request (ADR-0019, point 4).
+    assert "check_link" in fetch_page.__all__
+    assert not inspect.iscoroutinefunction(check_link)
+    assert list(inspect.signature(check_link).parameters) == ["url"]
+    url = check_link("https://example.org/article?id=1")
+    assert isinstance(url, httpx.URL) and url.host == "example.org"
+    with pytest.raises(InvalidLinkError):
+        check_link("https://example.org:8080/")
+    with pytest.raises(UnsupportedLinkError):
+        check_link("https://youtu.be/1")
 
 
 async def test_a_short_link_landing_on_a_social_site_is_unsupported() -> None:

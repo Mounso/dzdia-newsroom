@@ -77,6 +77,9 @@ services:
     environment:
       DATABASE_URL: *database-url
       TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:?set TELEGRAM_BOT_TOKEN in .env}
+      # The worker generates the drafts (ADR-0019, point 10); the API gets neither variable.
+      GEMINI_API_KEY: ${GEMINI_API_KEY:?set GEMINI_API_KEY in .env}
+      GENERATION_MODEL: ${GENERATION_MODEL:-}
       LOG_FORMAT: ${LOG_FORMAT:-json}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
     stop_grace_period: 30s  # the worker itself gives the current job 25 s (ADR-005)

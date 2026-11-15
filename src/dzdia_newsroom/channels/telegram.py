@@ -23,6 +23,8 @@ logger = logging.getLogger(__name__)
 
 API_BASE = "https://api.telegram.org"
 ALLOWED_UPDATES = ["message"]  # week 1: plain text messages only (ADR-005)
+# Longest `sendMessage` text, in UTF-16 code units.
+TEXT_LIMIT = 4096
 
 
 # Minimal views of the Bot API objects; unknown fields are ignored.
@@ -46,6 +48,61 @@ class _Message(BaseModel):
 class _Update(BaseModel):
     update_id: int
     message: _Message | None = None
+
+
+def _utf16_units(char: str) -> int:
+    return 2 if ord(char) > 0xFFFF else 1
+
+
+def utf16_length(text: str) -> int:
+    """The length Telegram counts: UTF-16 code units (a character outside the BMP counts 2)."""
+    return sum(_utf16_units(char) for char in text)
+
+
+def _fitting_prefix(text: str, limit: int) -> int:
+    """The number of characters of the longest prefix of `text` within `limit` code units.
+    Python strings index code points, so a cut there never splits a surrogate pair."""
+    units = 0
+    for index, char in enumerate(text):
+        units += _utf16_units(char)
+        if units > limit:
+            return index
+    return len(text)
+
+
+def split_text(text: str, limit: int = TEXT_LIMIT) -> list[str]:
+    """`text` in parts of at most `limit` UTF-16 code units (ADR-0019, point 8).
+
+    A text that fits is returned whole and unchanged. Otherwise each part ends at the last
+    blank line that fits, else the last line break, else the last space, else at the limit
+    (between two characters). The separator at a cut is dropped, the whitespace around a cut
+    is trimmed, and no part is empty.
+
+    Raises `ValueError` when `limit` is below 2: a character outside the BMP takes two code
+    units, so a smaller limit could never fit it."""
+    if limit < 2:
+        raise ValueError(f"limit must be at least 2 UTF-16 code units, got {limit}")
+    if utf16_length(text) <= limit:
+        return [text]
+    parts: list[str] = []
+    rest = text
+    while utf16_length(rest) > limit:
+        end = _fitting_prefix(rest, limit)
+        head = rest[:end]
+        for separator in ("\n\n", "\n", " "):
+            cut = head.rfind(separator)
+            if cut > 0:
+                part, rest = head[:cut], rest[cut + len(separator) :]
+                break
+        else:
+            part, rest = head, rest[end:]
+        part = part.rstrip()
+        rest = rest.lstrip()
+        if part:
+            parts.append(part)
+    if rest.strip():
+        parts.append(rest)
+    return parts
 
 
 @dataclass(frozen=True)
@@ -114,18 +171,22 @@ class TelegramClient:
         self._rand = rand
 
     async def send_text(self, chat_id: str, text: str, *, reply_to: str | None = None) -> None:
-        # No `parse_mode`: the text is sent as is, never interpreted as Markdown (v1 bug #7).
-        params: dict[str, Any] = {
-            "chat_id": chat_id,
-            "text": text,
-            "link_preview_options": {"is_disabled": True},
-        }
-        if reply_to is not None:
-            params["reply_parameters"] = {
-                "message_id": int(reply_to),
-                "allow_sending_without_reply": True,
+        """A text longer than TEXT_LIMIT is sent in several messages (`split_text`), in order;
+        only the first one replies to `reply_to` (ADR-0019, point 8). A failed part raises and
+        stops the send: the parts already sent stay sent."""
+        for index, part in enumerate(split_text(text)):
+            # No `parse_mode`: the text is sent as is, never interpreted as Markdown (v1 bug #7).
+            params: dict[str, Any] = {
+                "chat_id": chat_id,
+                "text": part,
+                "link_preview_options": {"is_disabled": True},
             }
-        await self._call("sendMessage", params)
+            if reply_to is not None and index == 0:
+                params["reply_parameters"] = {
+                    "message_id": int(reply_to),
+                    "allow_sending_without_reply": True,
+                }
+            await self._call("sendMessage", params)
 
     async def set_webhook(self, url: str, secret: str, *, drop_pending: bool = False) -> None:
         await self._call(

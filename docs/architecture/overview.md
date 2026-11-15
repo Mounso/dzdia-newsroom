@@ -15,7 +15,7 @@ The target product has two confirmed use cases:
 1. **Article from source material.** A journalist sends a link, an audio or a video; the system extracts the facts, proposes angles, drafts an article whose every fact cites its evidence, and creates a WordPress draft only after human approval.
 2. **Morning briefing.** A scheduled workflow collects press and social sources, deduplicates and triages topics, and posts a briefing to the team's Telegram group.
 
-**Current state (2026-11-15):** the runtime foundation is built and tested end to end: Telegram webhook, Postgres job queue, worker, Docker stack. The hallucination baseline of v1 is done ([results](../evals/baseline-v1.md#results)). The first v2 slice has its evidence, generation and validation code, measured offline in the [v2 comparison](../evals/v2-comparison.md); page fetching behind the SSRF guard and text extraction are written and tested without the network ([ADR-0018](../adr/0018-guarded-fetch-and-pasted-text.md)); the worker and Telegram wiring of that slice is not written yet, so no real page has been fetched. See the [roadmap](../roadmap.md).
+**Current state (2026-11-15):** the runtime foundation is built and tested end to end: Telegram webhook, Postgres job queue, worker, Docker stack. The hallucination baseline of v1 is done ([results](../evals/baseline-v1.md#results)). The first v2 slice has its evidence, generation and validation code, measured offline in the [v2 comparison](../evals/v2-comparison.md); page fetching behind the SSRF guard and text extraction are written and tested without the network ([ADR-0018](../adr/0018-guarded-fetch-and-pasted-text.md)); the worker and Telegram wiring of that slice is written in its lightest form ([ADR-0019](../adr/0019-lightest-wiring-of-the-slice.md)): one handler, nothing stored, one reply with a source line. It is tested without the network and without a real model: no real page has been fetched and the chain has not run end to end with a bot yet. See the [roadmap](../roadmap.md).
 
 ## System context
 
@@ -38,7 +38,7 @@ flowchart LR
     system -. "fetch untrusted content" .-> web
 ```
 
-Dashed arrows are planned. Today the only external systems in production code are Telegram and, in the evaluation harness, Gemini.
+Dashed arrows are planned. Today the external systems in production code are Telegram, Gemini and the web pages that journalists send, fetched behind the SSRF guard.
 
 ## Containers
 
@@ -70,7 +70,7 @@ flowchart LR
 | Container | Responsibility | Secrets it receives |
 |---|---|---|
 | `api` | Accept Telegram updates, check the secret header, normalize, apply the allowlist, enqueue. Nothing else. | Webhook secret, database URL |
-| `worker` | Claim jobs, renew their lease, run handlers, retry or bury failures. | Bot token, database URL |
+| `worker` | Claim jobs, renew their lease, run handlers, retry or bury failures. | Bot token, database URL, Gemini key |
 | `migrate` | Apply pending SQL migrations under an advisory lock, then exit. `api` and `worker` start only if it succeeds. | Database URL |
 | `postgres` | Single source of truth: job queue today, workflows, evidence and RAG index later. | Its own password |
 | `caddy` (prod) | Only public entry point; Let's Encrypt certificates; 404 for any other route; 1 MB body limit. | None |
@@ -101,7 +101,7 @@ sequenceDiagram
     loop every 20 s while the handler runs
         W->>P: extend lease (fenced by claim_token)
     end
-    W->>T: sendMessage (reply to the original message)
+    W->>T: sendMessage (acknowledgment, then the draft or an error text, as replies)
     W->>P: complete (fenced by claim_token)
 ```
 
@@ -118,9 +118,12 @@ src/dzdia_newsroom/
 ├── api/          FastAPI app: webhook route, health probe, entry point
 ├── channels/     Channel protocol, InboundMessage, Telegram adapter (parse + Bot API client + CLI)
 ├── db/           connection pool, migrations runner and SQL files, JobRepository, row models
+├── guardrails/   SSRF guard under the HTTP client (ADR-0018)
 ├── llm/          Gemini client (retries, spacing, per-call logs with cost), FakeLLM, shared with the evals
-├── tools/        evidence items, article generation and validation (v2 slice, ADR-0009)
-├── worker/       queue engine (Worker, retries, heartbeat, LISTEN), job handlers, entry point
+├── tools/        guarded page fetch, text extraction, evidence items, article generation and
+│                 validation, and their composition into a draft (v2 slice, ADR-0009, 0018, 0019)
+├── worker/       queue engine (Worker, retries, heartbeat, LISTEN), job handler, reply texts and
+│                 rendering, entry point
 ├── config.py     typed settings, one class per process role (least privilege)
 ├── logging_setup.py   JSON log formatter
 └── runtime.py    event loop selection (Windows)
@@ -148,7 +151,7 @@ These rules hold across the codebase. Some are enforced today; the others are co
 | The LLM never produces URLs, ids or trust scores: it cites ids it was given; code resolves and validates them. | In progress: evidence ids and quote checks in `tools/article.py` (ADR-0009, 0011, 0012, 0014) |
 | External content (web, social, transcripts) is untrusted: delimited in prompts, never able to trigger write tools. | Planned (week 2-4) |
 | Any write tool (WordPress) requires a persisted `APPROVED` workflow state. | Planned (week 2) |
-| Tools live in `tools/`; Telegram and MCP are thin adapters over them. | In progress: `tools/evidence.py` and `tools/article.py` exist, not wired to the worker yet |
+| Tools live in `tools/`; Telegram and MCP are thin adapters over them. | Followed by the v2 slice: `worker/handlers.py` routes the message and sends replies; fetching, evidence and generation are composed in `tools/draft.py` |
 
 ## Quality attributes
 

@@ -74,7 +74,7 @@ The worker picks it up within its 5-second poll interval. An `UPDATE` sends no `
 
 ## The bot does not answer
 
-**Symptoms:** a journalist sends a message and gets no "Bien reçu." reply.
+**Symptoms:** a journalist sends a link or a message in a private chat and gets no reply. In the team group, silence is expected for a message with no link ([ADR-0019](../adr/0019-lightest-wiring-of-the-slice.md)).
 
 **Diagnosis:**
 

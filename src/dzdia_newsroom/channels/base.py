@@ -47,5 +47,9 @@ class PermanentChannelError(ChannelError):
 
 class Channel(Protocol):
     async def send_text(self, chat_id: str, text: str, *, reply_to: str | None = None) -> None:
-        """Send plain text, never interpreted as markup. Raises `ChannelError`."""
+        """Send plain text, never interpreted as markup. Raises `ChannelError`.
+
+        A text longer than the platform's limit is split by the adapter into several messages,
+        sent in order, the first one replying to `reply_to` (ADR-0019, point 8): callers never
+        see the limit."""
         ...

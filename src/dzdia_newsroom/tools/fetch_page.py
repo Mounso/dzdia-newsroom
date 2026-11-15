@@ -35,6 +35,7 @@ __all__ = [
     "FetchedPage",
     "InvalidLinkError",
     "UnsupportedLinkError",
+    "check_link",
     "fetch_html",
 ]
 
@@ -131,17 +132,21 @@ def _rule_violation(url: httpx.URL) -> str | None:
     return None
 
 
-def _check_first_url(raw: str) -> httpx.URL:
+def check_link(url: str) -> httpx.URL:
+    """The check of the first URL, before any network call (ADR-0018, points 5 and 8; ADR-0019,
+    point 4): raises UnsupportedLinkError for a video or social host, InvalidLinkError for a
+    malformed link or one that breaks the URL rule. No network call. `fetch_html` calls it
+    first."""
     try:
-        url = httpx.URL(raw)
+        parsed = httpx.URL(url)
     except (httpx.InvalidURL, TypeError, ValueError) as exc:
         raise InvalidLinkError("the link is malformed") from exc
-    if url.host and _is_unsupported_host(url.host):
-        raise UnsupportedLinkError(f"host {url.host!r} is a video or social site")
-    violation = _rule_violation(url)
+    if parsed.host and _is_unsupported_host(parsed.host):
+        raise UnsupportedLinkError(f"host {parsed.host!r} is a video or social site")
+    violation = _rule_violation(parsed)
     if violation is not None:
         raise InvalidLinkError(violation)
-    return url
+    return parsed
 
 
 def _next_hop(current: httpx.URL, location: str) -> httpx.URL:
@@ -257,7 +262,7 @@ async def fetch_html(
     stats = _Stats()
     host = ""
     try:
-        first = _check_first_url(url)
+        first = check_link(url)
         host = first.host
         try:
             async with asyncio.timeout(deadline_s):

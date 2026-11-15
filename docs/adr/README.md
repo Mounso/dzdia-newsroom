@@ -37,15 +37,16 @@ An ADR that only changes part of an earlier one *amends* it: both stay accepted,
 | 0006 | [Docker image, compose layout, migrations and secret distribution](0006-docker-image-and-compose.md) | Accepted | 2026-10-27 | Builds on 0004, 0005; extended by 0007 |
 | 0007 | [Production host on Oracle Cloud: access, firewall, deployment, backups and hostname](0007-production-host-on-oracle-cloud.md) | Accepted | 2026-10-28 | Builds on 0004, 0006 |
 | 0008 | [Gemini 3.1 Pro (preview, low thinking) extracts the elements of the v1 baseline](0008-baseline-extractor-model.md) | Accepted | 2026-11-09 | Related to 0001 |
-| 0009 | [v2 vertical slice: a web link becomes a sourced article in Telegram](0009-v2-link-to-sourced-article-slice.md) | Accepted | 2026-11-13 | Builds on 0004, 0005; amended by 0011, 0012, 0014, 0018 |
+| 0009 | [v2 vertical slice: a web link becomes a sourced article in Telegram](0009-v2-link-to-sourced-article-slice.md) | Accepted | 2026-11-13 | Builds on 0004, 0005; amended by 0011, 0012, 0014, 0018, 0019 |
 | 0010 | [Comparison protocol for the v2 eval: full labels, a plain-prompt arm, and a conclusion fixed in advance](0010-v2-comparison-protocol.md) | Accepted | 2026-11-13 | Amends 0001; related to 0008, 0009, 0011, 0012, 0013 |
-| 0011 | [A quote that fails validation is removed, not reworded](0011-failed-quote-is-removed.md) | Accepted | 2026-11-13 | Amends 0009; amended by 0014 |
+| 0011 | [A quote that fails validation is removed, not reworded](0011-failed-quote-is-removed.md) | Accepted | 2026-11-13 | Amends 0009; amended by 0014, 0019 |
 | 0012 | [The article validator removes a quote with an unknown id, and refuses quotation marks outside quotes and empty drafts](0012-validator-closes-three-gaps.md) | Accepted | 2026-11-13 | Amends 0009; amended by 0014; related to 0010, 0011 |
 | 0013 | [The v2 comparison runs in its own command, with a blind sheet, its own labels file and intervals fixed in advance](0013-v2-comparison-harness.md) | Accepted | 2026-11-13 | Related to 0001, 0003, 0008, 0010 |
 | 0014 | [A quote is kept only when the source itself puts its words inside quotation marks](0014-quote-must-be-quoted-in-source.md) | Accepted | 2026-11-14 | Amends 0009, 0011, 0012; related to 0010, 0013 |
 | 0015 | [The published Dzdia articles are copied locally by a committed step, as a style reference only](0015-dzdia-corpus-local-copy.md) | Accepted | 2026-11-14 | Related to 0001, 0009, 0014 |
 | 0016 | [The v1 baseline is reported per task, with the article task fully labeled and every other rate printed as a floor](0016-baseline-reported-per-task.md) | Accepted | 2026-11-14 | Amends 0001; related to 0010, 0013 |
 | 0017 | [The v2 pipeline stays the production path of the slice, for code-checked quotes and traceable sources, not for a lower rate](0017-v2-stays-the-production-path.md) | Accepted | 2026-11-15 | Related to 0009, 0010, 0014, 0015 |
-| 0018 | [Pages are fetched through an SSRF guard placed under the HTTP client; pasted text is the way out when a link fails](0018-guarded-fetch-and-pasted-text.md) | Accepted | 2026-11-15 | Amends 0009; related to 0002, 0014, 0017 |
+| 0018 | [Pages are fetched through an SSRF guard placed under the HTTP client; pasted text is the way out when a link fails](0018-guarded-fetch-and-pasted-text.md) | Accepted | 2026-11-15 | Amends 0009; amended by 0019; related to 0002, 0014, 0017 |
+| 0019 | [The slice is wired in its lightest form: one handler, no stored draft, one reply with a source line](0019-lightest-wiring-of-the-slice.md) | Accepted | 2026-11-15 | Amends 0009, 0011, 0018; related to 0005, 0014, 0017 |
 
 > ADRs 0001-0006 were written in French and translated to English on 2026-10-28 with no change in substance; the French originals are in the git history (`docs/architecture_decisions.md`, commit 8e32200).

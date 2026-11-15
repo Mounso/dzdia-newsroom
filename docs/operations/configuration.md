@@ -31,12 +31,12 @@ This page lists every environment variable the system reads, which process reads
 | `OCI_NAMESPACE` | compose (`rclone`, profile `ops`) | Yes for uploads | — | Object Storage namespace of the tenancy (console: Tenancy details). |
 | `OCI_COMPARTMENT_OCID` | compose (`rclone`) | Yes for uploads | — | OCID of the compartment that holds the bucket. |
 | `OCI_REGION` | compose (`rclone`) | Yes for uploads | — | Region identifier, e.g. `eu-marseille-1`. |
-| `GEMINI_API_KEY` | LLM client (`LLMSettings`) | Yes for LLM calls (eval steps, and the v2 generator once wired) | — | Google Gemini API key. Not passed to any compose service yet. |
+| `GEMINI_API_KEY` | `worker`, eval harness (`LLMSettings`) | Yes for the `worker` and for eval steps | — | Google Gemini API key. Compose passes it to the `worker` only, which refuses to start without it ([ADR-0019](../adr/0019-lightest-wiring-of-the-slice.md)). |
 | `V1_MODEL` | eval harness (`LLMSettings`) | No | `gemini-3.1-flash-lite-preview` | Model used to replay the legacy v1 prompts. |
 | `EXTRACTION_MODEL` | eval harness (`LLMSettings`) | No | `gemini-3.1-pro-preview` | Model used to extract critical elements ([ADR-0008](../adr/0008-baseline-extractor-model.md)). |
 | `LLM_MAX_RPM` | LLM client (`LLMSettings`) | No | `20` | Requests per minute per Gemini client: request starts are spaced by `60 / LLM_MAX_RPM` seconds, retries included (R8). |
 | `LLM_TIMEOUT_S` | LLM client (`LLMSettings`) | No | `120` | Timeout of one Gemini request, in seconds. Timeouts and connection errors are retried like 429 and 5xx (review finding C-2). |
-| `GENERATION_MODEL` | v2 generator (`LLMSettings`) | No | `gemini-3.1-flash-lite-preview` | Model that writes the v2 article ([ADR-0009](../adr/0009-v2-link-to-sourced-article-slice.md), point 11): the v1 model, so the v2 eval measures the architecture. |
+| `GENERATION_MODEL` | `worker`, eval harness (`LLMSettings`) | No | `gemini-3.1-flash-lite-preview` | Model that writes the v2 article ([ADR-0009](../adr/0009-v2-link-to-sourced-article-slice.md), point 11): the v1 model, so the v2 eval measures the architecture. |
 | `EXTRACTION_THINKING_LEVEL` | eval harness (`LLMSettings`) | No | `low` | Thinking level of the extractor: `minimal`, `low`, `medium` or `high` (the levels a model accepts vary). Applies to the extractor only, never to the v1 model under test. |
 | `LLM_MAX_CONCURRENCY` | LLM client (`LLMSettings`) | No | `2` | Maximum concurrent calls per Gemini client. |
 
@@ -57,16 +57,16 @@ Do not use `@`, `/`, `:` or `?` in `POSTGRES_PASSWORD`: compose does not URL-enc
 
 Least privilege ([ADR-0005](../adr/0005-telegram-ingress.md), [ADR-0006](../adr/0006-docker-image-and-compose.md)): a compromised API process cannot send messages as the bot, and the migration job cannot reach Telegram.
 
-| Service | `DATABASE_URL` | `TELEGRAM_WEBHOOK_SECRET` | `TELEGRAM_BOT_TOKEN` | Allowlist |
-|---|---|---|---|---|
-| `postgres` | (owns `POSTGRES_PASSWORD`) | — | — | — |
-| `migrate` | yes | — | — | — |
-| `api` | yes | yes | **no** | yes |
-| `worker` | yes | — | yes | — |
-| `telegram-cli` (profile `tools`) | — | yes | yes | — |
-| `caddy` (profile `prod`) | — | — | — | — |
-| `cloudflared` (profile `dev`) | — | — | — | — |
-| `rclone` (profile `ops`) | — | — | — | — |
+| Service | `DATABASE_URL` | `TELEGRAM_WEBHOOK_SECRET` | `TELEGRAM_BOT_TOKEN` | Allowlist | `GEMINI_API_KEY` |
+|---|---|---|---|---|---|
+| `postgres` | (owns `POSTGRES_PASSWORD`) | — | — | — | — |
+| `migrate` | yes | — | — | — | — |
+| `api` | yes | yes | **no** | yes | **no** |
+| `worker` | yes | — | yes | — | yes |
+| `telegram-cli` (profile `tools`) | — | yes | yes | — | — |
+| `caddy` (profile `prod`) | — | — | — | — | — |
+| `cloudflared` (profile `dev`) | — | — | — | — | — |
+| `rclone` (profile `ops`) | — | — | — | — | — |
 
 `rclone` receives only the `OCI_*` identifiers, no credential: it authenticates as the VM's instance principal. `deploy/backup.sh` reads `BACKUP_*` from `.env` itself (it parses the file, it never sources it).
 
@@ -76,7 +76,7 @@ flowchart LR
     env -->|POSTGRES_PASSWORD| pg[(postgres)]
     env -->|DATABASE_URL| mig[migrate]
     env -->|DATABASE_URL, webhook secret, allowlist| api[api]
-    env -->|DATABASE_URL, bot token| wk[worker]
+    env -->|DATABASE_URL, bot token, Gemini key| wk[worker]
     env -->|bot token, webhook secret| cli[telegram-cli]
 ```
 

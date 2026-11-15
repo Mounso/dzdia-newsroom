@@ -6,7 +6,7 @@ import httpx
 import pytest
 
 from dzdia_newsroom.channels.base import ChannelError, PermanentChannelError
-from dzdia_newsroom.channels.telegram import TelegramClient
+from dzdia_newsroom.channels.telegram import TEXT_LIMIT, TelegramClient, split_text
 
 TOKEN = "123456:SECRET-TOKEN"
 
@@ -74,6 +74,100 @@ async def test_send_text_posts_plain_text_as_a_reply(
     assert body["text"] == "*pas du markdown*"
     assert "parse_mode" not in body  # v1 bug #7
     assert body["reply_parameters"] == {"message_id": 42, "allow_sending_without_reply": True}
+
+
+def utf16_units(text: str) -> int:
+    return len(text.encode("utf-16-le", errors="surrogatepass")) // 2
+
+
+def test_split_keeps_a_short_text_whole() -> None:
+    assert split_text("Bonjour", limit=10) == ["Bonjour"]
+    assert split_text("a" * TEXT_LIMIT) == ["a" * TEXT_LIMIT]
+    assert TEXT_LIMIT == 4096
+
+
+def test_split_cuts_at_the_last_blank_line_that_fits() -> None:
+    text = "un deux\ntrois\n\nquatre cinq\n\nsix sept huit"
+    assert split_text(text, limit=30) == ["un deux\ntrois\n\nquatre cinq", "six sept huit"]
+
+
+def test_split_falls_back_to_a_line_break_then_a_space() -> None:
+    assert split_text("un deux\ntrois quatre", limit=12) == ["un deux", "trois quatre"]
+    assert split_text("un deux trois quatre", limit=12) == ["un deux", "trois quatre"]
+
+
+def test_split_counts_utf16_code_units() -> None:
+    emoji = chr(0x1F600)  # outside the BMP: two UTF-16 code units
+    text = emoji * 3 + " " + "a" * 3
+    assert utf16_units(text) == 10
+    assert split_text(text, limit=10) == [text]
+    assert split_text(text, limit=9) == [emoji * 3, "a" * 3]
+
+
+def test_split_hard_cuts_a_text_without_whitespace_between_surrogate_pairs() -> None:
+    emoji = chr(0x1F600)
+    text = "a" + emoji * 5  # 11 units: a cut after 4 units would fall inside a pair
+    parts = split_text(text, limit=4)
+    assert "".join(parts) == text
+    assert parts == ["a" + emoji, emoji * 2, emoji * 2]
+    assert all(utf16_units(part) <= 4 for part in parts)
+
+
+def test_split_refuses_a_limit_below_two() -> None:
+    with pytest.raises(ValueError):
+        split_text("a" + chr(0x1F600), limit=1)
+
+
+def test_split_never_gives_an_empty_part_nor_one_over_the_limit() -> None:
+    text = ("Paragraphe " * 50 + "\n\n" + "x" * 700 + "\n" + "mot " * 300 + "\n\n\n") * 6
+    parts = split_text(text, limit=500)
+    assert len(parts) > 1
+    assert all(part.strip() for part in parts)
+    assert all(utf16_units(part) <= 500 for part in parts)
+    assert "".join(parts).replace(" ", "").replace("\n", "") == text.replace(" ", "").replace(
+        "\n", ""
+    )
+
+
+async def test_send_text_sends_a_short_text_in_one_call(
+    http: Callable[[Recorder], TelegramClient],
+) -> None:
+    recorder = Recorder(ok())
+    await http(recorder).send_text("111", "court", reply_to="42")
+    assert len(recorder.requests) == 1
+
+
+async def test_send_text_splits_a_long_text_and_only_the_first_part_replies(
+    http: Callable[[Recorder], TelegramClient],
+) -> None:
+    first = "a" * 3000
+    second = "b" * 3000
+    recorder = Recorder(ok(), ok())
+    await http(recorder).send_text("111", f"{first}\n\n{second}", reply_to="42")
+
+    assert [recorder.body(i)["text"] for i in range(2)] == [first, second]
+    assert recorder.body(0)["reply_parameters"]["message_id"] == 42
+    assert "reply_parameters" not in recorder.body(1)
+    assert all(recorder.body(i)["chat_id"] == "111" for i in range(2))
+
+
+async def test_send_text_counts_the_limit_in_utf16_code_units(
+    http: Callable[[Recorder], TelegramClient],
+) -> None:
+    emoji = chr(0x1F600)
+    text = emoji * 2048 + " " + "a"  # 2050 code points, 4098 UTF-16 code units
+    recorder = Recorder(ok(), ok())
+    await http(recorder).send_text("111", text)
+    assert [recorder.body(i)["text"] for i in range(2)] == [emoji * 2048, "a"]
+
+
+async def test_a_failed_part_stops_the_send(
+    http: Callable[[Recorder], TelegramClient],
+) -> None:
+    recorder = Recorder(ok(), failure(400, "Bad Request"))
+    with pytest.raises(PermanentChannelError):
+        await http(recorder).send_text("111", "\n\n".join(c * 3000 for c in "abc"))
+    assert len(recorder.requests) == 2
 
 
 async def test_set_webhook_sends_secret_and_allowed_updates(
