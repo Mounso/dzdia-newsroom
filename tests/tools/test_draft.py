@@ -5,7 +5,6 @@ from collections.abc import Callable
 
 import httpx
 import pytest
-from dzdia_newsroom.tools.draft import Draft, draft_from_link, draft_from_text
 
 from dzdia_newsroom.llm import FakeLLM
 from dzdia_newsroom.tools.article import (
@@ -15,6 +14,7 @@ from dzdia_newsroom.tools.article import (
     SentenceSegment,
     build_prompt,
 )
+from dzdia_newsroom.tools.draft import Draft, draft_from_link, draft_from_text
 from dzdia_newsroom.tools.evidence import MAX_INPUT_CHARS, build_evidence, cap_text
 from dzdia_newsroom.tools.fetch_page import (
     BlockedUrlError,
