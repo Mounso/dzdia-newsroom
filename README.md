@@ -6,7 +6,7 @@
 
 AI assistant for the editorial team of [dzdia.com](https://dzdia.com), an Algerian cultural media. Journalists talk to it on Telegram. It is designed to turn a link, an audio or a video into a sourced article draft, and to post a daily briefing of web and social news. Every fact will cite its evidence, and nothing will reach WordPress without human approval.
 
-> **Status (2026-11-15): stage 2 of 3.** The runtime foundation is built and tested end to end with a real bot: Telegram webhook, Postgres job queue, worker, Docker stack. The hallucination baseline of the legacy bot is done. The first slice of the rewrite, one link in and one sourced article out, has its evidence, generation and validation code and was measured offline against the legacy prompt; page fetching and the Telegram wiring of that slice are written and tested without the network or a real model, but the chain has not run end to end with a real bot yet. See the [roadmap](docs/roadmap.md).
+> **Status (2026-11-16): stage 2 of 3.** The runtime foundation is built and tested end to end with a real bot: Telegram webhook, Postgres job queue, worker, Docker stack. The hallucination baseline of the legacy bot is done. The first slice of the rewrite, one link in and one sourced article out, has its evidence, generation and validation code and was measured offline against the legacy prompt; page fetching and the Telegram wiring of that slice are written, and their tests use no network and no real model. The chain ran end to end with the development bot on 2026-11-16, in a private chat: a press link and a pasted text each gave a draft in about three seconds. The team group is not tried yet. See the [roadmap](docs/roadmap.md).
 
 ## Why
 
