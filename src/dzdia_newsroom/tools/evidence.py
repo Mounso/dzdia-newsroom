@@ -6,8 +6,8 @@ text, so a quote checked against an item is checked against the source.
 
 import hashlib
 import re
-from collections.abc import Iterator
-from dataclasses import dataclass
+from collections.abc import Iterator, Sequence
+from dataclasses import dataclass, replace
 
 MAX_ITEM_CHARS = 600
 # Same cap for every arm of the v2 eval (ADR-0010, point 3): apply `cap_text` once, upstream.
@@ -23,6 +23,8 @@ _ABBREVIATIONS = frozenset(
 _LAST_TOKEN = re.compile(r"([A-Za-zÀ-ÖØ-öø-ÿ]+)\.*$")
 # Tags that would let page text close an evidence item or open a fake one (V-17).
 _TAG = re.compile(r"<(/?\s*evidence)", re.IGNORECASE)
+# The same, plus the source elements of the dossier prompt (ADR-0020, point 9).
+_DOSSIER_TAG = re.compile(r"<(/?\s*(?:evidence|source))", re.IGNORECASE)
 
 
 @dataclass(frozen=True)
@@ -30,6 +32,7 @@ class Evidence:
     id: str
     text: str
     sha256: str
+    source: int = 1  # 1-based position of its source in a dossier (ADR-0020, point 9)
 
 
 @dataclass(frozen=True)
@@ -52,9 +55,28 @@ class EvidenceSet:
             f'<evidence id="{item.id}">{_neutralize(item.text)}</evidence>' for item in self.items
         )
 
+    def render_sources_for_prompt(self) -> str:
+        """The dossier prompt's rendering (ADR-0020, point 9): one `<source n="k">` element per
+        source number present, in increasing order, holding that source's
+        `<evidence id="En">…</evidence>` lines. Besides `<evidence` and `</evidence`, any
+        `<source` or `</source` inside the untrusted text is neutralized, so it cannot close a
+        source element or open a fake one. Only the prompt copy changes."""
+        blocks: list[str] = []
+        for source in sorted({item.source for item in self.items}):
+            lines = [
+                f'<evidence id="{item.id}">{_DOSSIER_TAG.sub(_GUARD, item.text)}</evidence>'
+                for item in self.items
+                if item.source == source
+            ]
+            blocks.append("\n".join([f'<source n="{source}">', *lines, "</source>"]))
+        return "\n".join(blocks)
+
+
+_GUARD = r"‹\1"  # the tag stays readable as text, but is no longer a tag
+
 
 def _neutralize(text: str) -> str:
-    return _TAG.sub(r"‹\1", text)
+    return _TAG.sub(_GUARD, text)
 
 
 def cap_text(text: str, max_chars: int = MAX_INPUT_CHARS) -> tuple[str, bool]:
@@ -89,6 +111,17 @@ def build_evidence(text: str, *, max_item_chars: int = MAX_ITEM_CHARS) -> Eviden
             for n, piece in enumerate(pieces, start=1)
         )
     )
+
+
+def build_dossier_evidence(texts: Sequence[str]) -> EvidenceSet:
+    """The evidence of a dossier (ADR-0020, point 9): each text (already capped) is cut by
+    `build_evidence`, then the items are numbered `E1…En` across all texts, in order, and each
+    item's `source` is the 1-based index of its text in `texts`."""
+    items: list[Evidence] = []
+    for source, text in enumerate(texts, start=1):
+        for item in build_evidence(text).items:
+            items.append(replace(item, id=f"E{len(items) + 1}", source=source))
+    return EvidenceSet(items=tuple(items))
 
 
 def _pack(paragraph: str, max_chars: int) -> list[str]:

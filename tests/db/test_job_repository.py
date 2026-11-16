@@ -20,7 +20,7 @@ async def status_of(conn: AsyncConnection[TupleRow], job_id: int) -> str:
 
 
 async def test_migrations_apply_once(conn: AsyncConnection[TupleRow]) -> None:
-    assert await apply_migrations(conn) == ["0001_jobs"]
+    assert await apply_migrations(conn) == ["0001_jobs", "0002_dossiers"]
     assert await apply_migrations(conn) == []
 
 

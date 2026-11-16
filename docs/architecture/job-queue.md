@@ -123,6 +123,8 @@ The Telegram client adds a second, inner retry layer for short failures (network
 - a rejection (other 4xx), raised as `PermanentChannelError`, becomes `PermanentJobError`;
 - any other `ChannelError` is left as is, so the queue's own backoff applies.
 
+**A `dead` job means that the bot failed** ([ADR-0020](../adr/0020-source-dossier-in-private-chat.md), point 14). A refusal that the journalist got an answer for is not an error of the job: a link that cannot be opened, a video or social link, a site that refuses the page, a full or an empty dossier. The handler sends the message and returns, so the job ends `done`, and its log line keeps the refusal as its outcome at WARNING level. A generation that fails after its retry, an expired deadline, an invalid payload and a request rejected by the platform still raise `PermanentJobError`.
+
 `last_error` stores `ExceptionType: message`, truncated to 2000 characters. Errors built from user input (for example a pydantic validation error on the payload) are reduced to a count, so message text never lands in the table.
 
 ## Graceful shutdown
@@ -141,7 +143,7 @@ A cancelled job is **released**: a fenced `UPDATE` sets it back to `queued`, giv
 Tracked in the [design review](../reviews/2026-10-28-design-review.md):
 
 - One job at a time per worker process; long LLM jobs will need concurrent slots (R6).
-- No retention: `done` jobs, with message text, stay forever (R4).
+- Rows are never deleted. The payload of a finished `inbound_message` job, which holds the message text, is emptied after 48 hours ([data model](data-model.md#retention)); the rest of R4 is open.
 - A `dead` job notifies nobody (R5).
 
 ## Operating the queue

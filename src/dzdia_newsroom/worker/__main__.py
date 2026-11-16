@@ -23,6 +23,7 @@ from dzdia_newsroom.config import (
     LoggingSettings,
     TelegramBotSettings,
 )
+from dzdia_newsroom.db.dossiers import DossierRepository
 from dzdia_newsroom.db.pool import open_pool
 from dzdia_newsroom.db.repository import JobRepository
 from dzdia_newsroom.guardrails.ssrf import guarded_client
@@ -32,6 +33,7 @@ from dzdia_newsroom.runtime import event_loop_factory
 from dzdia_newsroom.tools.fetch_page import PHASE_TIMEOUT_S
 from dzdia_newsroom.worker.handlers import build_handlers
 from dzdia_newsroom.worker.queue import Worker, listen_for_jobs
+from dzdia_newsroom.worker.retention import run_retention
 
 logger = logging.getLogger("dzdia_newsroom.worker")  # not __name__, which is "__main__"
 
@@ -70,10 +72,14 @@ async def run() -> None:
         # Journalists' links go through the SSRF guard only.
         guarded_client(timeout=httpx.Timeout(PHASE_TIMEOUT_S)) as pages,
     ):
-        handlers = build_handlers(TelegramClient(bot_token, http), pages, llm)
+        # The private chats' dossiers (ADR-0020); migration 0002 must be applied.
+        dossiers = DossierRepository(pool)
+        handlers = build_handlers(TelegramClient(bot_token, http), pages, llm, dossiers)
         worker = Worker(JobRepository(pool), handlers)
         wake = asyncio.Event()
         listener = asyncio.create_task(listen_for_jobs(database_url, wake))
+        # Expired dossiers and old job payloads, at start then every hour (ADR-0020, point 7).
+        retention = asyncio.create_task(run_retention(dossiers))
         working = asyncio.create_task(worker.run_forever(wake, stop))
         stopping = asyncio.create_task(stop.wait())
         logger.info("worker started")
@@ -86,9 +92,9 @@ async def run() -> None:
             except TimeoutError:
                 logger.warning("grace period over: current job cancelled")
         finally:
-            for task in (listener, working, stopping):
+            for task in (listener, retention, working, stopping):
                 task.cancel()
-            await asyncio.gather(listener, working, stopping, return_exceptions=True)
+            await asyncio.gather(listener, retention, working, stopping, return_exceptions=True)
     logger.info("worker stopped")
 
 

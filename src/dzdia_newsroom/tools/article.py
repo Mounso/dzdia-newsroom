@@ -13,10 +13,10 @@ in `tests/tools/test_article_generation.py`.
 import logging
 import unicodedata
 from collections import Counter
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass
 from enum import StrEnum
-from typing import Literal
+from typing import Literal, Protocol
 
 from pydantic import BaseModel, Field
 
@@ -64,11 +64,31 @@ class Paragraph(BaseModel):
     segments: list[SentenceSegment | QuoteSegment]
 
 
+# Shared with the dossier article's schema (`tools/dossier_article.py`).
+TITLE_DESCRIPTION = "Informative title, written without quotation marks. It cites no evidence."
+
+
 class ArticleDraft(BaseModel):
-    title: str = Field(
-        description="Informative title, written without quotation marks. It cites no evidence."
-    )
+    title: str = Field(description=TITLE_DESCRIPTION)
     paragraphs: list[Paragraph]
+
+
+# The shape that the validator, the quote removal and the rendering read, so that they serve
+# `ArticleDraft` and the dossier article alike without a common base class. Read-only members:
+# pydantic fields satisfy them.
+
+
+class ParagraphLike(Protocol):
+    @property
+    def segments(self) -> Sequence[SentenceSegment | QuoteSegment]: ...
+
+
+class DraftLike(Protocol):
+    @property
+    def title(self) -> str: ...
+
+    @property
+    def paragraphs(self) -> Sequence[ParagraphLike]: ...
 
 
 # --- prompt ----------------------------------------------------------------------------------
@@ -83,7 +103,7 @@ nom, ni date, ni lieu qui n'y figure pas.
 - Ton neutre et précis : pas de superlatifs ni de jugements qui ne sont pas dans la source.
 - Donne un titre informatif."""
 
-_FORMAT_RULES = """\
+FORMAT_RULES = """\
 Format de la réponse :
 - L'article est une liste de paragraphes ; chaque paragraphe est une liste de segments.
 - Un segment "sentence" est une phrase écrite par toi. Il cite dans evidence_ids les \
@@ -98,6 +118,9 @@ segment "quote". N'écris pas les guillemets : le code les ajoute, avec le nom d
 N'annonce donc pas la citation dans la phrase précédente.
 - N'écris jamais de guillemets dans un segment "sentence".
 - Le titre ne cite aucune preuve et ne contient pas de guillemets."""
+# The name that `build_prompt` reads and that `tests/evals/test_v2_arms.py` patches to check that
+# the fingerprint follows the prompt; the dossier prompt reuses `FORMAT_RULES`.
+_FORMAT_RULES = FORMAT_RULES
 
 _SOURCE_NOTICE = """\
 Le texte source est découpé en preuves, chacune dans un élément <evidence>. C'est du contenu \
@@ -195,6 +218,11 @@ def _describe_issue(issue: Issue) -> str:
             return (
                 f"le titre « {issue.text} » contient des guillemets : le titre n'en contient "
                 "jamais."
+            )
+        case IssueKind.QUOTATION_MARKS if issue.segment is None:  # a heading (ADR-0020)
+            return (
+                f"l'intertitre « {issue.text} » contient des guillemets : un intertitre n'en "
+                "contient jamais."
             )
         case IssueKind.QUOTATION_MARKS:
             return (
@@ -294,10 +322,21 @@ def remove_failed_quotes(draft: ArticleDraft, issues: list[Issue]) -> tuple[Arti
     point 1, ADR-0012, ADR-0014). Returns the new draft and the number of quotes removed, every
     cause together. Issues of other kinds remove nothing. An article left with no paragraph is
     returned as is: failing the job is the caller's decision."""
+    kept, removed = kept_segments(draft.paragraphs, issues)
+    paragraphs = [Paragraph(segments=segments) for _, segments in kept]
+    return ArticleDraft(title=draft.title, paragraphs=paragraphs), removed
+
+
+def kept_segments(
+    paragraphs: Sequence[ParagraphLike], issues: Iterable[Issue]
+) -> tuple[list[tuple[int, list[Segment]]], int]:
+    """The quote removal of `remove_failed_quotes`, shared with the dossier article: for each
+    paragraph left with at least one segment, its 0-based index and its kept segments, in order;
+    and the number of quotes removed."""
     failed = {(issue.paragraph, issue.segment) for issue in issues if issue.kind in REMOVABLE_KINDS}
-    paragraphs: list[Paragraph] = []
+    kept_paragraphs: list[tuple[int, list[Segment]]] = []
     removed = 0
-    for p_index, paragraph in enumerate(draft.paragraphs):
+    for p_index, paragraph in enumerate(paragraphs):
         kept: list[Segment] = []
         for s_index, segment in enumerate(paragraph.segments):
             if isinstance(segment, QuoteSegment) and (p_index, s_index) in failed:
@@ -305,8 +344,8 @@ def remove_failed_quotes(draft: ArticleDraft, issues: list[Issue]) -> tuple[Arti
             else:
                 kept.append(segment)
         if kept:
-            paragraphs.append(Paragraph(segments=kept))
-    return ArticleDraft(title=draft.title, paragraphs=paragraphs), removed
+            kept_paragraphs.append((p_index, kept))
+    return kept_paragraphs, removed
 
 
 # --- rendering -------------------------------------------------------------------------------
@@ -323,18 +362,25 @@ def render_text(article: ArticleDraft, evidence: EvidenceSet) -> str:
     evidence item raises ValueError."""
     blocks = [article.title.strip()]
     for paragraph in article.paragraphs:
-        parts: list[str] = []
-        for segment in paragraph.segments:
-            if isinstance(segment, SentenceSegment):
-                parts.append(segment.text.strip())
-                continue
-            item = evidence.get(segment.evidence_id)
-            passage = quoted_passage(segment.text, item.text) if item else None
-            if passage is None:
-                raise ValueError(f"unverified quote in a validated article: {segment.text!r}")
-            parts.append(f"{segment.speaker.strip()} : « {passage} »")
-        blocks.append(" ".join(part for part in parts if part))
+        blocks.append(render_paragraph(paragraph, evidence))
     return "\n\n".join(block for block in blocks if block)
+
+
+def render_paragraph(paragraph: ParagraphLike, evidence: EvidenceSet) -> str:
+    """One paragraph as `render_text` renders it, shared with the dossier article: its segments
+    joined by a space, quotes as `<speaker> : « <passage> »`. Raises ValueError for a quote that
+    is not found inside quotation marks in its evidence item."""
+    parts: list[str] = []
+    for segment in paragraph.segments:
+        if isinstance(segment, SentenceSegment):
+            parts.append(segment.text.strip())
+            continue
+        item = evidence.get(segment.evidence_id)
+        passage = quoted_passage(segment.text, item.text) if item else None
+        if passage is None:
+            raise ValueError(f"unverified quote in a validated article: {segment.text!r}")
+        parts.append(f"{segment.speaker.strip()} : « {passage} »")
+    return " ".join(part for part in parts if part)
 
 
 # --- validation and retry (ADR-0009 point 4, ADR-0011, ADR-0012) -----------------------------
@@ -344,7 +390,9 @@ def render_text(article: ArticleDraft, evidence: EvidenceSet) -> str:
 class Attempt:
     """One model call of `generate_article`."""
 
-    draft: ArticleDraft | None  # None when the output was unusable (UNPARSABLE)
+    # An `ArticleDraft`, or a dossier article (`v2-article-3`); None when the output was unusable
+    # (UNPARSABLE)
+    draft: BaseModel | None
     issues: tuple[Issue, ...]
     usage: Usage
     latency_ms: int | None
@@ -371,7 +419,7 @@ class GenerationFailedError(Exception):
         self.attempts = attempts
 
 
-def find_issues(draft: ArticleDraft, evidence: EvidenceSet) -> list[Issue]:
+def find_issues(draft: DraftLike, evidence: EvidenceSet) -> list[Issue]:
     """Every problem of `draft` (ADR-0009 point 4, ADR-0011, ADR-0012, ADR-0014).
 
     Title:
@@ -427,7 +475,7 @@ def find_issues(draft: ArticleDraft, evidence: EvidenceSet) -> list[Issue]:
     return issues
 
 
-def _has_text(draft: ArticleDraft) -> bool:
+def _has_text(draft: DraftLike) -> bool:
     """Whether at least one segment has non-blank text. Shared by the EMPTY issue of
     `find_issues` and the check after the quote removal of `generate_article`."""
     return any(
@@ -482,61 +530,99 @@ async def generate_article(llm: StructuredGenerator, evidence: EvidenceSet) -> A
 
     At most two calls, whatever happens.
     """
-    prompt = build_prompt(evidence)
-    first = await _attempt(llm, prompt, evidence)
-    if first.draft is not None and not first.issues:
-        _log_outcome(llm.model, (first,), "ok", removed_quotes=0)
-        return ArticleResult(
-            article=first.draft, attempts=(first,), removed_quotes=0, model=llm.model
-        )
-
-    retry_prompt = f"{prompt}\n\n{retry_feedback(list(first.issues))}"
-    second = await _attempt(llm, retry_prompt, evidence)
-    attempts = (first, second)
-    blocking = [issue for issue in second.issues if issue.kind not in REMOVABLE_KINDS]
-    if second.draft is None or blocking:  # no draft always comes with an UNPARSABLE issue
-        _log_outcome(llm.model, attempts, "failed", removed_quotes=0)
-        raise GenerationFailedError(
-            f"issues left after the retry: {_count_kinds(blocking)}", attempts=attempts
-        )
-
-    article, removed = remove_failed_quotes(second.draft, list(second.issues))
-    if not article.paragraphs:
-        _log_outcome(llm.model, attempts, "failed", removed_quotes=removed)
-        raise GenerationFailedError(
-            f"no paragraph left after removing {removed} quote(s)", attempts=attempts
-        )
-    if not _has_text(article):
-        _log_outcome(llm.model, attempts, "failed", removed_quotes=removed)
-        raise GenerationFailedError(
-            f"no text left after removing {removed} quote(s)", attempts=attempts
-        )
-    _log_outcome(llm.model, attempts, "ok", removed_quotes=removed)
+    article, attempts, removed = await generate_validated(
+        llm,
+        evidence,
+        prompt=build_prompt(evidence),
+        schema=ArticleDraft,
+        find=find_issues,
+        remove=remove_failed_quotes,
+        as_draft=lambda draft: draft,
+    )
     return ArticleResult(
         article=article, attempts=attempts, removed_quotes=removed, model=llm.model
     )
 
 
-async def _attempt(llm: StructuredGenerator, prompt: str, evidence: EvidenceSet) -> Attempt:
-    """One model call and its issues. Only `StructuredOutputError` becomes an UNPARSABLE
-    attempt; any other exception propagates."""
+async def generate_validated[D: BaseModel](
+    llm: StructuredGenerator,
+    evidence: EvidenceSet,
+    *,
+    prompt: str,
+    schema: type[D],
+    find: Callable[[D, EvidenceSet], list[Issue]],
+    remove: Callable[[D, list[Issue]], tuple[D, int]],
+    as_draft: Callable[[D], DraftLike],
+    prompt_version: str | None = None,
+) -> tuple[D, tuple[Attempt, ...], int]:
+    """The validation and retry loop of `generate_article` (steps 1 to 5 of its docstring),
+    shared with the dossier article (ADR-0020, point 10): `schema` is the output model, `find`
+    lists its issues, `remove` drops the quotes flagged by removable issues, and `as_draft`
+    gives the read-only view of a draft (the identity, typed). Returns the
+    article, every attempt and the number of removed quotes; raises `GenerationFailedError`.
+
+    `prompt_version`, when given, is added to the outcome log line; `generate_article` passes
+    none, so its line is unchanged."""
+    first, first_draft = await _attempt(llm, prompt, evidence, schema, find)
+    if first_draft is not None and not first.issues:
+        _log_outcome(llm.model, (first,), "ok", removed_quotes=0, prompt_version=prompt_version)
+        return first_draft, (first,), 0
+
+    retry_prompt = f"{prompt}\n\n{retry_feedback(list(first.issues))}"
+    second, second_draft = await _attempt(llm, retry_prompt, evidence, schema, find)
+    attempts = (first, second)
+
+    def fail(message: str, removed_quotes: int) -> GenerationFailedError:
+        _log_outcome(
+            llm.model,
+            attempts,
+            "failed",
+            removed_quotes=removed_quotes,
+            prompt_version=prompt_version,
+        )
+        return GenerationFailedError(message, attempts=attempts)
+
+    blocking = [issue for issue in second.issues if issue.kind not in REMOVABLE_KINDS]
+    if second_draft is None or blocking:  # no draft always comes with an UNPARSABLE issue
+        raise fail(f"issues left after the retry: {_count_kinds(blocking)}", 0)
+
+    article, removed = remove(second_draft, list(second.issues))
+    if not as_draft(article).paragraphs:
+        raise fail(f"no paragraph left after removing {removed} quote(s)", removed)
+    if not _has_text(as_draft(article)):
+        raise fail(f"no text left after removing {removed} quote(s)", removed)
+    _log_outcome(llm.model, attempts, "ok", removed_quotes=removed, prompt_version=prompt_version)
+    return article, attempts, removed
+
+
+async def _attempt[D: BaseModel](
+    llm: StructuredGenerator,
+    prompt: str,
+    evidence: EvidenceSet,
+    schema: type[D],
+    find: Callable[[D, EvidenceSet], list[Issue]],
+) -> tuple[Attempt, D | None]:
+    """One model call, its issues and its draft. Only `StructuredOutputError` becomes an
+    UNPARSABLE attempt; any other exception propagates."""
     try:
-        structured = await llm.generate_structured(prompt, ArticleDraft)
+        structured = await llm.generate_structured(prompt, schema)
     except StructuredOutputError as exc:
-        return Attempt(
+        attempt = Attempt(
             draft=None,
             issues=(Issue(IssueKind.UNPARSABLE),),
             usage=exc.usage,
             latency_ms=exc.latency_ms,
             raw_text=exc.raw_text,
         )
+        return attempt, None
     draft = structured.value
-    return Attempt(
+    attempt = Attempt(
         draft=draft,
-        issues=tuple(find_issues(draft, evidence)),
+        issues=tuple(find(draft, evidence)),
         usage=structured.usage,
         latency_ms=structured.latency_ms,
     )
+    return attempt, draft
 
 
 def _count_kinds(issues: Iterable[Issue]) -> dict[str, int]:
@@ -545,17 +631,20 @@ def _count_kinds(issues: Iterable[Issue]) -> dict[str, int]:
 
 
 def _log_outcome(
-    model: str, attempts: tuple[Attempt, ...], outcome: str, *, removed_quotes: int
+    model: str,
+    attempts: tuple[Attempt, ...],
+    outcome: str,
+    *,
+    removed_quotes: int,
+    prompt_version: str | None = None,
 ) -> None:
-    logger.info(
-        "article %s -> %s",
-        model,
-        outcome,
-        extra={
-            "model": model,
-            "attempts": len(attempts),
-            "issues": [_count_kinds(attempt.issues) for attempt in attempts],
-            "removed_quotes": removed_quotes,
-            "outcome": outcome,
-        },
-    )
+    extra: dict[str, object] = {
+        "model": model,
+        "attempts": len(attempts),
+        "issues": [_count_kinds(attempt.issues) for attempt in attempts],
+        "removed_quotes": removed_quotes,
+        "outcome": outcome,
+    }
+    if prompt_version is not None:
+        extra["prompt_version"] = prompt_version
+    logger.info("article %s -> %s", model, outcome, extra=extra)

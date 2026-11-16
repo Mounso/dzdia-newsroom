@@ -1,4 +1,5 @@
-"""The composition of the slice (ADR-0019, point 12): fetch, extract, cap, evidence, generate.
+"""The composition of the team group's slice (ADR-0019, point 12): fetch, extract, cap,
+evidence, generate.
 No real network (httpx.MockTransport) and no real model (FakeLLM)."""
 
 from collections.abc import Callable
@@ -14,8 +15,8 @@ from dzdia_newsroom.tools.article import (
     SentenceSegment,
     build_prompt,
 )
-from dzdia_newsroom.tools.draft import Draft, draft_from_link, draft_from_text
-from dzdia_newsroom.tools.evidence import MAX_INPUT_CHARS, build_evidence, cap_text
+from dzdia_newsroom.tools.draft import Draft, draft_from_link
+from dzdia_newsroom.tools.evidence import MAX_INPUT_CHARS
 from dzdia_newsroom.tools.fetch_page import (
     BlockedUrlError,
     FetchError,
@@ -24,7 +25,6 @@ from dzdia_newsroom.tools.fetch_page import (
     UnsupportedLinkError,
 )
 from dzdia_newsroom.tools.page_text import (
-    MIN_SOURCE_CHARS,
     NoReadableTextError,
     extract_page_text,
 )
@@ -175,45 +175,3 @@ async def test_a_generation_failure_propagates_unchanged() -> None:
 async def test_an_unexpected_model_error_propagates_unchanged() -> None:
     with pytest.raises(RuntimeError, match="boom"):
         await link_draft(html_handler(page()), FakeLLM([RuntimeError("boom")]))
-
-
-# --- pasted text -------------------------------------------------------------------------------
-
-PASTED = (
-    "Le festival du film d'Oran s'est ouvert le 3 mai au théâtre régional, devant un public "
-    "nombreux venu de toute la région.\n\n"
-    "Douze films sont en compétition cette année, dont quatre premières oeuvres, selon les "
-    "organisateurs qui annoncent aussi des ateliers pour les jeunes réalisateurs.\n"
-    "La clôture est prévue le 10 mai avec la remise des prix par le jury international."
-)
-
-
-async def test_a_pasted_text_goes_through_the_same_pipeline_from_the_evidence_step() -> None:
-    llm = FakeLLM([article("E1", "E2")])
-    draft = await draft_from_text(llm, f"  {PASTED}\n ")
-
-    assert draft.result.article == article("E1", "E2")
-    assert draft.evidence == build_evidence(cap_text(PASTED)[0])
-    assert draft.source_chars == len(PASTED)
-    assert draft.paywall_suspected is False
-    assert draft.truncated is False
-    assert llm.prompts == [build_prompt(draft.evidence)]
-
-
-async def test_a_long_pasted_text_is_capped() -> None:
-    text = ("Un paragraphe du texte collé par la journaliste, assez long pour compter.\n") * 600
-    draft = await draft_from_text(FakeLLM([article()]), text)
-    assert draft.truncated is True
-    assert draft.evidence == build_evidence(cap_text(text.strip())[0])
-
-
-async def test_a_short_pasted_text_has_no_readable_text() -> None:
-    llm = FakeLLM([])
-    with pytest.raises(NoReadableTextError):
-        await draft_from_text(llm, "  " + "a" * (MIN_SOURCE_CHARS - 1) + "  ")
-    assert llm.prompts == []
-
-
-async def test_a_pasted_text_at_the_floor_is_accepted() -> None:
-    draft = await draft_from_text(FakeLLM([article()]), "a" * MIN_SOURCE_CHARS)
-    assert draft.source_chars == MIN_SOURCE_CHARS

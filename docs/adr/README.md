@@ -46,7 +46,8 @@ An ADR that only changes part of an earlier one *amends* it: both stay accepted,
 | 0015 | [The published Dzdia articles are copied locally by a committed step, as a style reference only](0015-dzdia-corpus-local-copy.md) | Accepted | 2026-11-14 | Related to 0001, 0009, 0014 |
 | 0016 | [The v1 baseline is reported per task, with the article task fully labeled and every other rate printed as a floor](0016-baseline-reported-per-task.md) | Accepted | 2026-11-14 | Amends 0001; related to 0010, 0013 |
 | 0017 | [The v2 pipeline stays the production path of the slice, for code-checked quotes and traceable sources, not for a lower rate](0017-v2-stays-the-production-path.md) | Accepted | 2026-11-15 | Related to 0009, 0010, 0014, 0015 |
-| 0018 | [Pages are fetched through an SSRF guard placed under the HTTP client; pasted text is the way out when a link fails](0018-guarded-fetch-and-pasted-text.md) | Accepted | 2026-11-15 | Amends 0009; amended by 0019; related to 0002, 0014, 0017 |
-| 0019 | [The slice is wired in its lightest form: one handler, no stored draft, one reply with a source line](0019-lightest-wiring-of-the-slice.md) | Accepted | 2026-11-15 | Amends 0009, 0011, 0018; related to 0005, 0014, 0017 |
+| 0018 | [Pages are fetched through an SSRF guard placed under the HTTP client; pasted text is the way out when a link fails](0018-guarded-fetch-and-pasted-text.md) | Accepted | 2026-11-15 | Amends 0009; amended by 0019, 0020; related to 0002, 0014, 0017 |
+| 0019 | [The slice is wired in its lightest form: one handler, no stored draft, one reply with a source line](0019-lightest-wiring-of-the-slice.md) | Accepted | 2026-11-15 | Amends 0009, 0011, 0018; amended by 0020; related to 0005, 0014, 0017 |
+| 0020 | [A private chat holds a dossier of sources; `/ecris` writes one article from all of them](0020-source-dossier-in-private-chat.md) | Accepted | 2026-11-16 | Amends 0018, 0019; related to 0009, 0014, 0015, 0017 |
 
 > ADRs 0001-0006 were written in French and translated to English on 2026-10-28 with no change in substance; the French originals are in the git history (`docs/architecture_decisions.md`, commit 8e32200).

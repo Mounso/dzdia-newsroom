@@ -25,6 +25,28 @@ erDiagram
         text version PK "migration file stem, e.g. 0001_jobs"
         timestamptz applied_at
     }
+    dossiers {
+        bigint id PK "identity"
+        text channel "e.g. telegram"
+        text chat_id "unique with channel: one dossier per chat"
+        timestamptz created_at
+        timestamptz last_activity_at "expires 48 hours later"
+    }
+    dossier_sources {
+        bigint id PK "identity"
+        bigint dossier_id FK "ON DELETE CASCADE"
+        integer position "1 to n, the number shown to the journalist"
+        text kind "link | pasted_text"
+        text url "the link as sent; null for a pasted text"
+        text text "extracted text after the caps"
+        integer source_chars "length before the caps"
+        boolean truncated
+        boolean paywall_suspected
+        text message_id "with link_index: a replayed job adds nothing"
+        integer link_index "position of the link in its message"
+        timestamptz created_at
+    }
+    dossiers ||--o{ dossier_sources : holds
 ```
 
 ### `jobs`
@@ -43,6 +65,15 @@ Partial indexes stay small: they only contain the rows a worker may claim, not t
 ### `schema_migrations`
 
 Created by the migration runner itself ([`db/migrate.py`](../../src/dzdia_newsroom/db/migrate.py)). One row per applied file. The runner holds a Postgres advisory lock while it works, so two concurrent runs apply each file once.
+
+### `dossiers` and `dossier_sources`
+
+Defined in [`0002_dossiers.sql`](../../src/dzdia_newsroom/db/migrations/0002_dossiers.sql) ([ADR-0020](../adr/0020-source-dossier-in-private-chat.md)). A private chat has at most one dossier; each web page or pasted text that a journalist sends becomes one source of it.
+
+- Only extracted text is stored: no HTML, no draft, no article and no evidence item. Evidence is rebuilt from the stored texts each time an article is written.
+- Adding a source is one transaction that locks the dossier row, checks the caps (6 sources, 30,000 characters per source, 60,000 per dossier) and inserts at the next position.
+- The unique key on `(dossier_id, message_id, link_index)` makes a replayed job add nothing.
+- `/nouveau` deletes the dossier row, and its sources with it.
 
 ## Job payloads
 
@@ -66,7 +97,14 @@ Payloads are validated again by the handler (`InboundMessage.model_validate`); a
 
 ## Retention
 
-None yet: rows are never deleted. Planned (gap R4 in the [design review](../reviews/2026-10-28-design-review.md)): purge `done` jobs after a fixed period, and minimize or purge `raw` earlier. Any purge must keep `dedup_key` rows for at least 24 hours, the window during which Telegram may redeliver an update.
+A background task of the worker runs at start and then every hour ([ADR-0020](../adr/0020-source-dossier-in-private-chat.md), points 7 and 8).
+
+| Data | Rule |
+|---|---|
+| A dossier and its sources | Deleted 48 hours after the last activity (a source added, or an article written). Every read also deletes an expired dossier first, so the rule does not depend on when the task runs. |
+| The payload of an `inbound_message` job | Replaced by `{}` once the job is `done` or `dead` and has not changed for 48 hours. The row and its `dedup_key` stay, so a redelivered update is still refused. |
+
+Rows of `jobs` are still never deleted (the rest of gap R4 in the [design review](../reviews/2026-10-28-design-review.md)). A `dead` job cannot be replayed by hand once its payload is emptied.
 
 ## Planned tables
 

@@ -4,6 +4,7 @@
 - **Date:** 2026-11-15
 - **Deciders:** Abdou (author), with Claude as reviewer
 - **Amends:** [ADR-0009](0009-v2-link-to-sourced-article-slice.md) (point 8: no `drafts` table; point 9: no hook in the queue; point 10: the acknowledgment, the group rule and the rendering), [ADR-0011](0011-failed-quote-is-removed.md) (point 3: where the count of removed quotes is shown), [ADR-0018](0018-guarded-fetch-and-pasted-text.md) (point 12: how pasted text is named as a source)
+- **Amended by:** [ADR-0020](0020-source-dossier-in-private-chat.md) (point 1: sources are stored; points 2, 3 and 7: the links, the routing and the replies of a private chat; point 6: an answered refusal is a finished job; point 9: no duration in the acknowledgments)
 - **Related:** [ADR-0005](0005-telegram-ingress.md) (allowlist, settings split per process), [ADR-0014](0014-quote-must-be-quoted-in-source.md) (point 6: the wording of the removed-quote count), [ADR-0017](0017-v2-stays-the-production-path.md) (point 7: the display of the sources is decided here); [independent review](../reviews/2026-11-13-independent-review.md), findings V-7, V-8, V-13, V-14, A-4; [corpus counters](../evals/dzdia-corpus.md#results)
 
 ## Context

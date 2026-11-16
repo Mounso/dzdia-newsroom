@@ -57,7 +57,29 @@ SELECT id, kind, attempts, max_attempts, updated_at, last_error
 FROM jobs WHERE status = 'dead' ORDER BY updated_at DESC LIMIT 20;
 ```
 
-Avoid `SELECT payload` in shared sessions: `inbound_message` payloads contain the message text and the raw Telegram update.
+Avoid `SELECT payload` in shared sessions: `inbound_message` payloads contain the message text and the raw Telegram update. The payload of a `done` or `dead` job is emptied after 48 hours ([data model](../architecture/data-model.md#retention)), so an older dead job cannot be requeued.
+
+A `dead` job means that the bot failed. A refusal that the journalist got an answer for (a link that cannot be opened, a video link, a site that refuses the page, a full or an empty dossier) ends `done`; find it in the worker logs by its outcome:
+
+```bash
+docker compose logs --no-log-prefix worker | jq -c 'select(.route != null and .outcome != "ok") | {ts, route, outcome, host, links}'
+```
+
+Dossiers of the private chats ([ADR-0020](../adr/0020-source-dossier-in-private-chat.md)); do not select `text` in shared sessions, it holds press text and pasted texts:
+
+```sql
+-- Dossiers, their size and their last activity (deleted 48 hours after it)
+SELECT d.id, d.chat_id, d.last_activity_at, count(s.id) AS sources,
+       coalesce(sum(length(s.text)), 0) AS chars
+FROM dossiers d LEFT JOIN dossier_sources s ON s.dossier_id = d.id
+GROUP BY d.id ORDER BY d.last_activity_at DESC;
+```
+
+The retention task logs one line at worker start and then every hour:
+
+```bash
+docker compose logs --no-log-prefix worker | jq -c 'select(.msg | startswith("retention"))'
+```
 
 ### Requeue a dead job
 
@@ -74,7 +96,7 @@ The worker picks it up within its 5-second poll interval. An `UPDATE` sends no `
 
 ## The bot does not answer
 
-**Symptoms:** a journalist sends a link or a message in a private chat and gets no reply. In the team group, silence is expected for a message with no link ([ADR-0019](../adr/0019-lightest-wiring-of-the-slice.md)).
+**Symptoms:** a journalist sends a link or a message in a private chat and gets no reply. In a private chat every message gets one: a receipt for a source, the article after `/ecris`, or the help text ([ADR-0020](../adr/0020-source-dossier-in-private-chat.md)). In the team group, silence is expected for a message with no link ([ADR-0019](../adr/0019-lightest-wiring-of-the-slice.md)).
 
 **Diagnosis:**
 
