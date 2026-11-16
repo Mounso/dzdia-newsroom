@@ -197,7 +197,7 @@ deploy/deploy.sh origin/main
 Check that the CI is green on the commit first: the VM has no GitHub token. [`deploy.sh`](../../deploy/deploy.sh) does, in order:
 
 1. refuse a checkout with local changes, or a ref that is not on `origin/main`;
-2. take a pre-deployment backup (`predeploy/`), unless no database runs yet;
+2. take a pre-deployment backup (`predeploy/`), unless no database runs yet; while `BACKUP_BUCKET` is not set in `.env`, it prints a warning and deploys with no backup;
 3. check out the commit (detached), build the image, and tag it `dzdia-newsroom:<sha>` and `dzdia-newsroom:local`;
 4. `docker compose --profile prod up -d --remove-orphans`: `migrate` runs first, then `api` and `worker` are recreated;
 5. wait up to 120 s for `https://$PUBLIC_HOST/health` through Caddy, then print `webhook-info`;

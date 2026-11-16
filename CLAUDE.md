@@ -27,7 +27,7 @@
 - Every external call has a timeout, bounded retries with backoff, and is logged with cost/latency.
 - Prompts are versioned; changing one requires running the related eval suite.
 - Code, identifiers, comments, docstrings, docs and commit messages are in English.
-- Every new module starts with an ADR in `docs/adr/` (template and index: `docs/adr/README.md`).
+- An ADR in `docs/adr/` records only a decision that is hard to reverse, in 300 words at most (template and index: `docs/adr/README.md`); any other decision gets one line in the commit message.
 
 # Read only when needed
 - `docs/SPEC.md`: active feature spec (not created yet).

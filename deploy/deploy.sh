@@ -96,6 +96,11 @@ predeploy_backup() {
     log "no running database (first deployment?): skipping the pre-deployment backup"
     return 0
   fi
+  # A host with no backup bucket yet still deploys; backup.sh would refuse to run without it.
+  if ! env_get BACKUP_BUCKET >/dev/null; then
+    log "warning: BACKUP_BUCKET is not set in .env: NO pre-deployment backup is taken"
+    return 0
+  fi
   run "$REPO_ROOT/deploy/backup.sh" predeploy
 }
 

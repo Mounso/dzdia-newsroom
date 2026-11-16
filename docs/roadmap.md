@@ -1,6 +1,6 @@
 # Roadmap
 
-Where the project stands and what comes next. The plan follows the product spec v2.1 (private document); every new module starts with an ADR.
+Where the project stands and what comes next. The plan follows the product spec v2.1 (private document); since 2026-11-16 an ADR records only a decision that is hard to reverse.
 
 ## Principles
 

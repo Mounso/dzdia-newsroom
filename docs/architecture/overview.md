@@ -168,7 +168,7 @@ These rules hold across the codebase. Some are enforced today; the others are co
 
 ## Target architecture
 
-The modules below are planned in the product spec and will each get an ADR before they are written.
+The modules below are planned in the product spec; an ADR is written for the decisions that are hard to reverse.
 
 ```mermaid
 flowchart TB
