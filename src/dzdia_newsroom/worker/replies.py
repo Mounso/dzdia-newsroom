@@ -334,9 +334,10 @@ class Route:
 def route_message(message: InboundMessage) -> Route:
     """Team group: the first link gets a draft, anything else no answer, commands included.
 
-    Private chat, the first rule that applies: a command (`parse_command`); at least one link,
-    each distinct link becoming a source; a stripped text of at least MIN_SOURCE_CHARS, a
-    pasted-text source; else the help."""
+    Private chat, the first rule that applies: a command (`parse_command`); a text that holds
+    at least MIN_SOURCE_CHARS once its links are taken out and it is stripped, a pasted-text
+    source stored whole, whose links are not fetched; at least one link, each distinct link
+    becoming a source; else the help."""
     links = find_links(message.text)
     if not message.is_private:
         if links:
@@ -345,10 +346,10 @@ def route_message(message: InboundMessage) -> Route:
     command = parse_command(message.text)
     if command is not None:
         return Route(_COMMAND_ROUTES[command])
+    if len(_LINK.sub("", message.text).strip()) >= MIN_SOURCE_CHARS:
+        return Route(RouteKind.SOURCE)
     if links:
         return Route(RouteKind.SOURCE, links=tuple(dict.fromkeys(links)))
-    if len(message.text.strip()) >= MIN_SOURCE_CHARS:
-        return Route(RouteKind.SOURCE)
     return Route(RouteKind.HELP)
 
 

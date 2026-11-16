@@ -269,6 +269,24 @@ async def test_a_pasted_text_joins_the_dossier(pages: tuple[Pages, httpx.AsyncCl
     assert recorder.requests == []
 
 
+async def test_a_pasted_text_with_a_link_is_stored_whole_and_fetches_nothing(
+    pages: tuple[Pages, httpx.AsyncClient],
+) -> None:
+    recorder, client = pages
+    store, channel = FakeStore(), FakeChannel()
+    text = f"{PASTED}\n{LINK}"
+    await handler_for(channel, client, FakeLLM([]), store)(inbound_job(text=text))
+    [source] = await store.sources(KEY)
+    assert source.text == text and source.url is None
+    assert channel.texts == [
+        replies.receipt(
+            [f"Source 1 ajoutée : texte collé, {len(text)} caractères."],
+            DossierState(count=1, total_chars=len(text)),
+        )
+    ]
+    assert recorder.requests == []
+
+
 def by_host(request: httpx.Request) -> httpx.Response:
     if request.url.host == "gone.example":
         return html("", 404)

@@ -472,9 +472,22 @@ def test_private_duplicate_links_are_kept_once() -> None:
     assert route == Route(RouteKind.SOURCE, links=("https://a.dz/1", "https://b.dz/2"))
 
 
-def test_a_link_wins_over_a_long_text() -> None:
-    route = route_message(message(f"{LONG_TEXT} https://example.org/a"))
-    assert route == Route(RouteKind.SOURCE, links=("https://example.org/a",))
+def test_a_long_text_wins_over_its_links() -> None:
+    route = route_message(message(f"https://a.dz/1 {LONG_TEXT} https://example.org/a"))
+    assert route == Route(RouteKind.SOURCE)  # a pasted text: no link is fetched
+
+
+def test_links_do_not_count_in_the_length_of_a_pasted_text() -> None:
+    short = "a" * (MIN_SOURCE_CHARS - 1)
+    route = route_message(message(f"{short} https://example.org/{'b' * MIN_SOURCE_CHARS}"))
+    assert route == Route(
+        RouteKind.SOURCE, links=(f"https://example.org/{'b' * MIN_SOURCE_CHARS}",)
+    )
+
+
+def test_a_long_text_with_a_link_stays_a_link_in_the_team_group() -> None:
+    route = route_message(message(f"{LONG_TEXT} https://example.org/a", private=False))
+    assert route == Route(RouteKind.LINK, link="https://example.org/a")
 
 
 def test_a_long_text_without_link_is_a_pasted_source() -> None:
